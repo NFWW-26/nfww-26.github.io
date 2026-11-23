@@ -1,0 +1,1925 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Water quality samples</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+<style>
+  html, body { margin: 0; height: 100%; font-family: Arial, Helvetica, sans-serif; }
+  #map { position: absolute; top: 0; bottom: 0; left: 0; right: 0; }
+  #key div { margin: 3px 0; }
+  #key label { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%;
+            margin-right: 6px; vertical-align: middle; border: 1px solid #555; }
+
+  /* Tool buttons (Filter and Display on the left, Legend on the right) */
+  #tools { display: flex; flex-direction: column; gap: 6px; }
+  .tool-wrap { position: relative; }
+  .tool-btn { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px;
+              padding: 0; margin: 0; background: #fff; color: #2e5e3e; border: none; border-radius: 4px;
+              box-shadow: 0 1px 5px rgba(0,0,0,.3); cursor: pointer; }
+  .tool-btn:hover { background: #f0f6f1; }
+  .tool-btn[aria-expanded="true"] { background: #2e5e3e; color: #fff; }
+  .tool-btn:focus-visible { outline: 3px solid #f4d03f; outline-offset: 2px; }
+  .tool-btn svg { width: 20px; height: 20px; }
+
+  /* The transparent left border is the gap between button and box. The pointer can cross it
+     without leaving the button's group, so the box stays open. background-clip keeps it invisible. */
+  .tool-box { display: none; position: absolute; top: 0; left: 100%; margin-left: 0;
+              background: #fff; background-clip: padding-box;
+              border-left: 8px solid transparent; border-radius: 6px;
+              padding: 10px 12px; box-shadow: 0 1px 5px rgba(0,0,0,.3); font-size: 14px;
+              width: max-content; max-height: 70vh; overflow: auto; box-sizing: content-box; z-index: 1000; }
+  .tool-box label { white-space: nowrap; }
+  .tool-box.open { display: block; }
+  /* Legend box: opens over its button at the top right of the map */
+  .legend-box { left: auto; right: 0; border-left: 0; }
+  /* Room on the right for the close button */
+  .tool-box { padding-right: 36px; }
+  .tool-close { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; padding: 0;
+                display: flex; align-items: center; justify-content: center;
+                background: none; border: none; border-radius: 4px; cursor: pointer; color: #444; }
+  .tool-close:hover { background: #f0f0f0; color: #000; }
+  .tool-close:focus-visible { outline: 3px solid #f4d03f; outline-offset: 1px; }
+  .tool-close svg { width: 14px; height: 14px; }
+  .tool-section + .tool-section { margin-top: 10px; border-top: 1px solid #ddd; padding-top: 8px; }
+  .tool-section h4 { margin: 0 0 6px; font-size: 14px; }
+  .tool-section > summary { cursor: pointer; font-weight: bold; font-size: 14px; list-style-position: inside; }
+  .tool-section[open] > summary { margin-bottom: 6px; }
+  .tool-box label { display: block; margin: 3px 0; cursor: pointer; }
+  .tool-box .label-row { display: flex; align-items: center; gap: 8px; }
+  .label-row select { font: 14px Arial, Helvetica, sans-serif; padding: 2px 4px; }
+  .bulk { margin: 2px 0 6px; }
+  .bulk button { font-size: 12px; padding: 2px 8px; margin-right: 4px; cursor: pointer; }
+  .date-mode { margin: 2px 0 8px; }
+  .date-fields input[type=number] { width: 5em; }
+  .date-fields input[type=date] { font: inherit; }
+
+  .pop-title { font-weight: bold; font-size: 14px; margin-bottom: 4px; }
+  .pop-cat { font-size: 13px; padding: 2px 6px; margin-bottom: 6px; }
+  table.details { border-collapse: collapse; font-size: 12px; width: 100%; }
+  table.details th { text-align: left; vertical-align: top; padding: 3px 8px 3px 0;
+                     color: #333; font-weight: bold; white-space: nowrap; }
+  table.details td { vertical-align: top; padding: 3px 0; border-top: 1px solid #eee; }
+  .pop-heading { font-weight: bold; font-size: 13px; margin-bottom: 6px; }
+  /* Popups for several samples at one spot: fixed width, so the date buttons keep
+     the same two-column layout whichever date is selected. On very narrow phones the width shrinks to fit. */
+  .pop-multi { width: 320px; max-width: calc(100vw - 100px); }
+  .pop-dates { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 8px;
+               padding-bottom: 8px; border-bottom: 1px solid #ddd; }
+  .pop-date { font: 12px Arial, Helvetica, sans-serif; padding: 3px 6px; cursor: pointer;
+              background: #f4f4f4; border: 1px solid #bbb; border-radius: 4px;
+              width: 100%; box-sizing: border-box; text-align: left; white-space: nowrap; overflow: hidden; }
+  .pop-date.active { background: #dde8ff; border-color: #4a6fd1; font-weight: bold; }
+  .pop-date .swatch { width: 10px; height: 10px; margin-right: 4px; }
+  @media (max-width: 600px) {
+    .tool-box { font-size: 13px; max-width: calc(100vw - 80px); }
+  }
+  /* Caption and attribution share the bottom-right corner on narrow screens */
+  .leaflet-bottom.leaflet-left .leaflet-control {
+    max-width: calc(100vw - 20px);
+    white-space: normal;
+    line-height: 1.3;
+  }
+  /* Monitoring sites: diamonds with a code label */
+  .site-diamond { box-sizing: border-box; width: 9px; height: 9px; margin: 1px;
+                  background: #fff; border: 2px solid #222; transform: rotate(45deg); }
+  .site-code-label { font: bold 11px Arial, Helvetica, sans-serif; color: #111;
+                     padding: 1px 4px; background: rgba(255,255,255,.85);
+                     border: 1px solid #444; border-radius: 3px; box-shadow: none; }
+  .site-code-label::before { display: none; }
+  /* Sample labels: same look as the site codes, without the pointer */
+  .sample-label { font: bold 11px Arial, Helvetica, sans-serif; color: #111;
+                  padding: 1px 4px; background: rgba(255,255,255,.85);
+                  border: 1px solid #444; border-radius: 3px; box-shadow: none; }
+  .sample-label::before { display: none; }
+  .infra-icon { background: none; border: none; }
+  .layer-row svg { display: block; flex: 0 0 auto; }
+  /* Basemap picker */
+  .base-picker { margin: 2px 0 6px; }
+  .base-btn { display: flex; align-items: center; gap: 8px; width: 100%; font: 14px Arial, Helvetica, sans-serif;
+              padding: 4px 6px; background: #fff; border: 1px solid #888; border-radius: 4px;
+              cursor: pointer; text-align: left; box-sizing: border-box; }
+  .base-btn:focus-visible { outline: 3px solid #f4d03f; outline-offset: 1px; }
+  .base-caret { margin-left: auto; }
+  .base-list { margin: 4px 0 0; padding: 0; list-style: none; border: 1px solid #888;
+               border-radius: 4px; background: #fff; max-height: 40vh; overflow: auto; }
+  .base-list[hidden] { display: none; }
+  .base-opt { display: flex; align-items: center; gap: 8px; padding: 4px 6px;
+              cursor: pointer; white-space: nowrap; font-size: 14px; }
+  .base-opt:hover, .base-opt:focus-visible { background: #f0f6f1; outline: none; }
+  .base-opt[aria-selected="true"] { background: #dde8ff; font-weight: bold; }
+  .base-thumb { flex: 0 0 auto; width: 64px; height: 44px; border: 1px solid #555; border-radius: 3px;
+                background-color: #ddd; background-position: center; background-size: cover;
+                background-repeat: no-repeat; }
+  .reset-link { font: 13px Arial, Helvetica, sans-serif; padding: 0; margin: 0; background: none;
+                border: none; color: #2e5e3e; text-decoration: underline; cursor: pointer; }
+  .reset-link:hover { color: #1d3d29; }
+  .reset-link:focus-visible { outline: 3px solid #f4d03f; outline-offset: 2px; }
+  /* Search panel */
+  .search-box { width: 280px; }
+  .search-title { font-weight: bold; font-size: 14px; margin: 0 0 6px; }
+  .search-row { display: flex; align-items: center; gap: 6px; }
+  .search-input { flex: 1 1 auto; min-width: 0; font: 14px Arial, Helvetica, sans-serif; padding: 5px 6px;
+                  border: 1px solid #888; border-radius: 4px; box-sizing: border-box; }
+  .search-input:focus-visible { outline: 3px solid #f4d03f; outline-offset: 1px; }
+  .search-clear { flex: 0 0 auto; width: 28px; height: 28px; padding: 0; display: flex; align-items: center;
+                  justify-content: center; background: #fff; color: #444; border: 1px solid #888;
+                  border-radius: 4px; cursor: pointer; }
+  .search-clear:hover { background: #f0f0f0; color: #000; }
+  .search-clear:focus-visible { outline: 3px solid #f4d03f; outline-offset: 1px; }
+  .search-clear svg { width: 12px; height: 12px; }
+  .search-list { margin: 4px 0 0; padding: 0; list-style: none; border: 1px solid #888;
+                 border-radius: 4px; background: #fff; max-height: 30vh; overflow: auto; }
+  .search-list[hidden] { display: none; }
+  .search-opt { padding: 4px 6px; cursor: pointer; font-size: 14px; white-space: normal; }
+  .search-opt:hover { background: #f0f6f1; }
+  .search-opt.active { background: #dde8ff; }
+  .search-msg { font-size: 12px; color: #555; margin-top: 4px; }
+  /* Ring that marks the searched site */
+  .search-icon { background: none; border: none; }
+  .search-ring { box-sizing: border-box; width: 36px; height: 36px; border: 4px solid #0b5fff;
+                 border-radius: 50%; background: rgba(11,95,255,.12);
+                 box-shadow: 0 0 0 2px #fff, 0 0 6px rgba(0,0,0,.5); }
+  /* Message shown after a copy button is pressed */
+  .copy-toast { position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%); z-index: 2500;
+                max-width: calc(100vw - 32px); box-sizing: border-box; padding: 8px 14px; border-radius: 6px;
+                background: #2e5e3e; color: #fff; font: 14px/1.4 Arial, Helvetica, sans-serif;
+                box-shadow: 0 2px 10px rgba(0,0,0,.4); pointer-events: none; }
+  .copy-toast[hidden] { display: none; }
+  .tool-btn[aria-busy="true"] { opacity: .6; cursor: progress; }
+  /* Download panel */
+  .download-box { width: 280px; }
+  .dl-text { margin: 0 0 8px; font-size: 14px; line-height: 1.4; white-space: normal; }
+  .dl-note { margin: 0 0 10px; font-size: 12px; color: #555; line-height: 1.4; white-space: normal; }
+  .dl-note a { color: #2e5e3e; text-decoration: underline; }
+  .dl-note a:focus-visible { outline: 3px solid #f4d03f; outline-offset: 2px; }
+  .dl-button { font: bold 14px Arial, Helvetica, sans-serif; margin-top: 10px; padding: 6px 14px; color: #fff;
+               background: #2e5e3e; border: none; border-radius: 4px; cursor: pointer; }
+  .dl-button:hover { background: #3d7450; }
+  .dl-button:disabled { background: #999; cursor: default; }
+  .dl-button:focus-visible { outline: 3px solid #f4d03f; outline-offset: 2px; }
+  /* Zoom extents button, in the same bar as the zoom buttons */
+  .leaflet-bar a.view-extents { display: flex; align-items: center; justify-content: center; color: #2e5e3e; }
+  .leaflet-bar a.view-extents svg { width: 18px; height: 18px; }
+  /* The bar runs left to right: + then - then Zoom extents */
+  .view-bar.leaflet-bar.leaflet-control { display: flex; flex-direction: row; }
+  .view-bar.leaflet-bar.leaflet-control a { flex: 0 0 auto; border-bottom: none; border-right: 1px solid #ccc; border-radius: 0; }
+  .view-bar.leaflet-bar.leaflet-control a:first-child { border-top-left-radius: 4px; border-bottom-left-radius: 4px; }
+  .view-bar.leaflet-bar.leaflet-control a:last-child { border-right: none; border-top-right-radius: 4px; border-bottom-right-radius: 4px; }
+
+  /* Help buttons (a small ? to the right of a caption) and the help popup */
+  .help-btn { display: inline-block; box-sizing: border-box; width: 18px; height: 18px; margin: 0 0 0 6px; padding: 0;
+              border: 1.5px solid #499ED5; border-radius: 50%; background: #499ED5; color: #fff;
+              font: bold 12px/15px Arial, Helvetica, sans-serif; text-align: center; vertical-align: middle; cursor: pointer; }
+  .help-btn:hover, .help-btn[aria-expanded="true"] { background: #2f7fb8; border-color: #2f7fb8; color: #fff; }
+  .help-btn:focus-visible { outline: 3px solid #f4d03f; outline-offset: 1px; }
+  @media (pointer: coarse) { .help-btn { width: 24px; height: 24px; font-size: 14px; line-height: 21px; } }
+  .help-pop { position: fixed; z-index: 2000; width: 300px; max-width: calc(100vw - 16px); box-sizing: border-box;
+              background: #fff; border-radius: 6px; padding: 10px 12px; box-shadow: 0 2px 10px rgba(0,0,0,.4);
+              font: 13px/1.45 Arial, Helvetica, sans-serif; color: #222; }
+  .help-pop[hidden] { display: none; }
+  .help-title { font-weight: bold; font-size: 14px; margin: 0 30px 6px 0; }
+  .help-body { max-height: 55vh; overflow: auto; }
+  .help-body p { margin: 0 0 8px; }
+  .help-body ul, .help-body ol { margin: 0 0 8px; padding-left: 20px; }
+  .help-body li { margin: 0 0 3px; }
+  .help-body a { color: #1a5fa8; }
+  .help-pop .help-close { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; padding: 0;
+                          display: flex; align-items: center; justify-content: center;
+                          background: none; border: none; border-radius: 4px; cursor: pointer; color: #444; }
+  .help-pop .help-close:hover { background: #f0f0f0; color: #000; }
+  .help-pop .help-close:focus-visible { outline: 3px solid #f4d03f; outline-offset: 1px; }
+  .help-pop .help-close svg { width: 14px; height: 14px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="tools">
+  <div class="tool-wrap" data-tool="filter">
+    <button type="button" class="tool-btn" aria-expanded="false" aria-label="Filter" title="Filter">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 4h18l-7 8.5V19l-4 2v-8.5z"/>
+      </svg>
+    </button>
+    <div class="tool-box" role="dialog" aria-label="Filter">
+      <button type="button" class="tool-close" aria-label="Close Filter" title="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+          <path d="M6 6l12 12M18 6L6 18"/>
+        </svg>
+      </button>
+      <details class="tool-section">
+        <summary data-help="filterDates">Dates</summary>
+        <div class="date-mode" role="radiogroup" aria-label="Date selection">
+          <label><input type="radio" name="datemode" value="range" checked> Range</label>
+          <label><input type="radio" name="datemode" value="months"> Months</label>
+        </div>
+        <div id="range-controls" class="date-fields">
+          <label>End date <input type="date" id="end-date"></label>
+          <label>Prior days <input type="number" id="range-days" min="0" step="1" value="365"></label>
+        </div>
+        <div id="month-controls" hidden>
+          <div class="bulk"><button type="button" id="months-all">All</button><button type="button" id="months-none">None</button></div>
+          <div id="months"></div>
+        </div>
+      </details>
+      <details class="tool-section">
+        <summary data-help="filterCatchments">Catchments</summary>
+        <div class="bulk"><button type="button" id="catchments-all">All</button><button type="button" id="catchments-none">None</button></div>
+        <div id="catchments"></div>
+      </details>
+      <div class="tool-section">
+        <button type="button" class="reset-link" id="reset-filter">Reset filter settings</button>
+      </div>
+    </div>
+  </div>
+  <div class="tool-wrap" data-tool="display">
+    <button type="button" class="tool-btn" aria-expanded="false" aria-label="Display" title="Display">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true">
+        <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/>
+        <circle cx="12" cy="12" r="3" fill="currentColor"/>
+      </svg>
+    </button>
+    <div class="tool-box" role="dialog" aria-label="Display">
+      <button type="button" class="tool-close" aria-label="Close Display" title="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+          <path d="M6 6l12 12M18 6L6 18"/>
+        </svg>
+      </button>
+      <details class="tool-section">
+        <summary data-help="displayParameter">Parameter</summary>
+        <label><input type="radio" name="param" value="ecoli" checked> E.coli</label>
+        <label><input type="radio" name="param" value="nitrates"> Nitrates</label>
+        <label><input type="radio" name="param" value="phosphates"> Phosphates</label>
+      </details>
+      <details class="tool-section">
+        <summary data-help="displayOptions">Options</summary>
+        <label><input type="checkbox" id="cluster-toggle"> Group nearby samples</label>
+        <label class="label-row">Sample labels
+          <select id="label-select">
+            <option value="none" selected>None</option>
+            <option value="value">Values</option>
+            <option value="site">Names</option>
+          </select>
+        </label>
+      </details>
+      <details class="tool-section">
+        <summary data-help="displayBaseMap">Base Map</summary>
+        <div class="base-picker">
+          <button type="button" class="base-btn" id="base-btn" aria-haspopup="listbox" aria-expanded="false">
+            <span class="base-thumb" id="base-thumb"></span>
+            <span id="base-name"></span>
+            <span class="base-caret" aria-hidden="true">&#9662;</span>
+          </button>
+          <ul class="base-list" id="base-list" role="listbox" aria-label="Basemap style" hidden></ul>
+        </div>
+      </details>
+      <div class="tool-section">
+        <button type="button" class="reset-link" id="reset-display">Reset display settings</button>
+      </div>
+    </div>
+  </div>
+  <div class="tool-wrap" data-tool="search">
+    <button type="button" class="tool-btn" aria-expanded="false" aria-label="Search" title="Search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+        <circle cx="10" cy="10" r="6.5"/>
+        <path d="M15 15l6 6"/>
+      </svg>
+    </button>
+    <div class="tool-box search-box" role="dialog" aria-label="Search">
+      <button type="button" class="tool-close" aria-label="Close Search" title="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+          <path d="M6 6l12 12M18 6L6 18"/>
+        </svg>
+      </button>
+      <div class="search-title" data-help="searchSite">Search for a site</div>
+      <div class="search-row">
+        <input type="text" id="search-input" class="search-input" role="combobox" aria-autocomplete="list"
+               aria-expanded="false" aria-controls="search-list" autocomplete="off" spellcheck="false"
+               placeholder="Site code or name" aria-label="Site code or name">
+        <button type="button" id="search-clear" class="search-clear" aria-label="Clear search" title="Clear">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18"/>
+          </svg>
+        </button>
+      </div>
+      <ul id="search-list" class="search-list" role="listbox" aria-label="Matching sites" hidden></ul>
+      <div id="search-msg" class="search-msg" aria-live="polite"></div>
+    </div>
+  </div>
+  <div class="tool-wrap" data-tool="download">
+    <button type="button" class="tool-btn" aria-expanded="false" aria-label="Download data" title="Download data">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 3v12"/>
+        <path d="M7 11l5 5 5-5"/>
+        <path d="M4 20h16"/>
+      </svg>
+    </button>
+    <div class="tool-box download-box" role="dialog" aria-label="Download data">
+      <button type="button" class="tool-close" aria-label="Close Download" title="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+          <path d="M6 6l12 12M18 6L6 18"/>
+        </svg>
+      </button>
+      <div class="search-title" data-help="downloadData">Download data</div>
+      <p class="dl-text" id="dl-count" aria-live="polite"></p>
+      <p class="dl-note">The file follows the Dates and Catchments settings in Filter. It holds the sampling date, time, latitude, longitude, nitrates, phosphates and E.coli.</p>
+      <p class="dl-note"><b>If you re-use this data, you must credit New Forest Water Watch (NFWW).</b> See the <a href="terms.html" target="_blank" rel="noopener">Terms of Use</a> for the licence and the credit line to use.</p>
+      <label class="label-row">Format
+        <select id="dl-format">
+          <option value="csv" selected>CSV</option>
+        </select>
+      </label>
+      <button type="button" class="dl-button" id="dl-button">Download</button>
+      <div id="dl-msg" class="search-msg" aria-live="polite"></div>
+    </div>
+  </div>
+  <div class="tool-wrap" id="copy-wrap">
+    <button type="button" class="tool-btn" id="copy-map-btn" aria-label="Copy map image to clipboard" title="Copy map image to clipboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+      </svg>
+    </button>
+  </div>
+</div>
+<div id="legend-wrap" class="tool-wrap" data-tool="legend">
+  <button type="button" class="tool-btn" aria-expanded="false" aria-label="Legend" title="Legend">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <circle cx="5" cy="6" r="1.8" fill="currentColor"/><path d="M10 6h10"/>
+      <circle cx="5" cy="12" r="1.8" fill="currentColor"/><path d="M10 12h10"/>
+      <circle cx="5" cy="18" r="1.8" fill="currentColor"/><path d="M10 18h10"/>
+    </svg>
+  </button>
+  <div class="tool-box legend-box" role="dialog" aria-label="Legend">
+    <button type="button" class="tool-close" aria-label="Close Legend" title="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+        <path d="M6 6l12 12M18 6L6 18"/>
+      </svg>
+    </button>
+    <div id="key"></div>
+  </div>
+</div>
+<div id="help-pop" class="help-pop" role="dialog" aria-label="Help" hidden>
+  <button type="button" class="help-close" id="help-close" aria-label="Close help" title="Close">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+      <path d="M6 6l12 12M18 6L6 18"/>
+    </svg>
+  </button>
+  <div class="help-title" id="help-title"></div>
+  <div class="help-body" id="help-body"></div>
+</div>
+<div id="copy-toast" class="copy-toast" role="status" aria-live="polite" hidden></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script>
+// data.js is loaded with a number added to its address that changes every 5 minutes, so a browser does not keep
+// showing an old copy for long after Create data has replaced the file. The tag is written here, not in the HTML,
+// because the number is made in the browser.
+document.write('<script src="data.js?v=' + Math.floor(Date.now() / 300000) + '"></scr' + 'ipt>');
+</script>
+<script>
+// If data.js is missing, or was made by a different version of the script than this page, stop with a message
+// instead of showing wrong or empty results.
+var DATA_PROBLEM = '';
+if (typeof NFWW_DATA === 'undefined') {
+  DATA_PROBLEM = 'The data file (data.js) could not be loaded. Check that data.js has been uploaded to the same folder as this page, then reload the page.';
+} else if (NFWW_DATA.siteVersion !== 'V0.6.12') {
+  DATA_PROBLEM = 'This page is version V0.6.12 but its data file (data.js) is version ' + NFWW_DATA.siteVersion + '. Run both Create data and Create website, and upload all the files to the same folder. If you have just uploaded them, reload the page with Ctrl+F5.';
+}
+if (DATA_PROBLEM) {
+  document.body.innerHTML = '<p style="margin:24px;max-width:600px;font:16px/1.5 Arial,Helvetica,sans-serif;color:#222">' + DATA_PROBLEM + '</p>';
+  throw new Error(DATA_PROBLEM);
+}
+var DATA = NFWW_DATA;
+
+// Saved display settings (kept in this browser only). Every read and write is wrapped in
+// try/catch, because storage can be blocked or empty. Saved values are checked before use.
+var SETTINGS_KEY = 'nfww-map-settings-v1';
+var settingsReady = false;   // set true at the end of the script, so start-up does not write
+
+function loadSaved() {
+  try {
+    var text = window.localStorage.getItem(SETTINGS_KEY);
+    if (!text) return {};
+    var obj = JSON.parse(text);
+    return (obj && typeof obj === 'object') ? obj : {};
+  } catch (e) {
+    return {};
+  }
+}
+var SAVED = loadSaved();
+
+// Writes the current choices. The end date, month ticks and colour-band ticks are not saved.
+// Catchments are saved as the list switched off, so new catchments appear on by default.
+function saveSettings() {
+  if (!settingsReady) return;
+  try {
+    var off = Object.keys(catchmentOn).filter(function (n) { return !catchmentOn[n]; });
+    window.localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      param: currentParam,
+      labels: labelMode,
+      base: baseId,
+      cluster: clusteringOn,
+      infra: infraSaved,
+      sites: sitesOn,
+      dateMode: dateMode,
+      rangeDays: rangeDays,
+      catchOff: off
+    }));
+  } catch (e) {
+    // Storage not available: the map still works, it just forgets the settings
+  }
+}
+
+// The parameter on show: 'ecoli', 'nitrates' or 'phosphates'
+var currentParam = (SAVED.param && DATA.params[SAVED.param]) ? SAVED.param : DATA.defaultParam;
+
+// Sample labels: 'none', 'value' (parameter value) or 'site' (site name)
+var labelMode = (SAVED.labels === 'value' || SAVED.labels === 'site') ? SAVED.labels : 'none';
+
+// The text for a sample's label, or '' for no label
+function labelFor(s) {
+  if (labelMode === 'value') {
+    var v = s.vals[currentParam];
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'number') return Number.isInteger(v) ? v.toLocaleString('en-GB') : String(v);
+    return v;
+  }
+  if (labelMode === 'site') {
+    var name = s.siteName || '';
+    var code = /^[A-Za-z]{2,3}[0-9]{3}$/.test(s.siteCode || '') ? s.siteCode : '';
+    if (code && name) return code + ' – ' + name;
+    return name || code || '';
+  }
+  return '';
+}
+
+// Each sample's colour band for the parameter on show
+DATA.samples.forEach(function (s, i) { s.idx = i; s.category = s.cats[currentParam]; });
+
+function esc(v) {
+  return String(v === null || v === undefined ? '' : v)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function popupHtml(s) {
+  var p = DATA.params[currentParam];
+  var html = '<div class="pop-title">' + esc(s.siteName || s.siteCode || 'Sample') + '</div>';
+  html += '<div class="pop-cat" style="border-left: 4px solid ' + esc(DATA.colours[s.category]) + ';">' +
+          esc(p.title) + ': ' + esc(p.labels[s.category]) + '</div>';
+  html += '<table class="details">';
+  s.details.forEach(function (d) {
+    html += '<tr><th>' + esc(d.label) + '</th><td>' + esc(d.value) + '</td></tr>';
+  });
+  html += '</table>';
+  return html;
+}
+
+// Severity order, used to colour a cluster by its most serious sample
+var SEVERITY = { VHigh: 4, High: 3, Med: 2, Low: 1, Absent: 0 };
+
+// Turns 'YYYY-MM' into a friendly label such as 'Sep 2026'
+var MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function monthLabel(ym) {
+  var parts = ym.split('-');
+  return MONTH_NAMES[parseInt(parts[1], 10) - 1] + ' ' + parts[0];
+}
+// Turns 'YYYY-MM-DD' into 'DD/MM/YYYY' for display
+function ukDate(iso) {
+  var p = iso.split('-');
+  return p[2] + '/' + p[1] + '/' + p[0];
+}
+
+// Which colour bands are currently shown. All on by default.
+var colourOn = {};
+DATA.legendOrder.forEach(function (c) { colourOn[c] = true; });
+
+// Catchment names, shown as 'Unknown' where the sample has none. All on by default.
+function catName(s) {
+  return s.catchment || 'Unknown';
+}
+var catchmentOn = {};
+DATA.samples.forEach(function (s) { catchmentOn[catName(s)] = true; });
+// Restore catchments switched off on an earlier visit. New catchments stay on.
+// If that would leave every catchment off, they are all switched on instead.
+if (Array.isArray(SAVED.catchOff)) {
+  SAVED.catchOff.forEach(function (n) {
+    if (Object.prototype.hasOwnProperty.call(catchmentOn, n)) catchmentOn[n] = false;
+  });
+  if (Object.keys(catchmentOn).every(function (n) { return !catchmentOn[n]; })) {
+    Object.keys(catchmentOn).forEach(function (n) { catchmentOn[n] = true; });
+  }
+}
+
+// Which months are switched on. All on by default.
+var monthOn = {};
+DATA.months.forEach(function (m) { monthOn[m] = true; });
+
+// Date selection: 'range' (an end date and prior days) or 'months' (the monthly tick boxes). Range is the default.
+var dateMode = SAVED.dateMode === 'months' ? 'months' : 'range';
+var rangeEnd = todayIso();   // yyyy-mm-dd, the current date (never saved)
+var rangeDays = (Number.isInteger(SAVED.rangeDays) && SAVED.rangeDays >= 0 && SAVED.rangeDays <= 3650)
+  ? SAVED.rangeDays : 365;   // prior days before the end date
+
+// Today's date as yyyy-mm-dd, from the device's clock
+function todayIso() {
+  var d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// The earliest date in the range: the end date less the prior days
+function rangeStart() {
+  var p = rangeEnd.split('-');
+  var t = Date.UTC(+p[0], +p[1] - 1, +p[2]) - rangeDays * 86400000;
+  return new Date(t).toISOString().slice(0, 10);
+}
+
+// True if a sample passes the date filter in the current mode.
+// Dates are yyyy-mm-dd text, so they compare correctly as strings.
+function dateOn(s) {
+  if (dateMode === 'months') return !!monthOn[s.month];
+  return s.date >= rangeStart() && s.date <= rangeEnd;
+}
+
+// True if a marker's colour, catchment and date are all switched on
+function isVisible(mk) {
+  return colourOn[mk.options.category] && catchmentOn[mk.options.catchment] && dateOn(mk.wqSample);
+}
+
+// Circle radius in pixels (8) plus its outline, so circles whose centres are closer than this overlap on screen
+var OVERLAP_PX = 17;
+
+// The visible samples whose circles overlap the clicked marker's circle at the current zoom level,
+// newest first. A sample is visible if its date, colour and catchment are switched on.
+// Samples at the same location always overlap, so they are always listed together.
+function samplesAtSpot(marker) {
+  var origin = map.latLngToContainerPoint(marker.getLatLng());
+  return DATA.samples
+    .filter(function (o) {
+      if (!dateOn(o)) return false;
+      if (!colourOn[o.category] || !catchmentOn[catName(o)]) return false;
+      var p = map.latLngToContainerPoint([o.lat, o.lng]);
+      return origin.distanceTo(p) <= OVERLAP_PX;
+    })
+    .sort(function (a, b) {
+      return (b.date + ' ' + b.time).localeCompare(a.date + ' ' + a.time);
+    });
+}
+
+// Builds the pop-up for a marker. If several samples share the spot, lists their dates
+// and shows the selected one's details. Clicking a date switches the pop-up to it.
+function buildPopup(marker, s) {
+  var wrap = document.createElement('div');
+  L.DomEvent.disableClickPropagation(wrap);
+  L.DomEvent.disableScrollPropagation(wrap);
+  var group = samplesAtSpot(marker);
+  // Several samples at this spot: fixed-width popup, so the date buttons never re-flow
+  if (group.length > 1) wrap.className = 'pop-multi';
+
+  if (group.length > 1) {
+    var heading = document.createElement('div');
+    heading.className = 'pop-heading';
+    heading.textContent = group.length + ' samples at this point';
+    wrap.appendChild(heading);
+
+    var list = document.createElement('div');
+    list.className = 'pop-dates';
+    group.forEach(function (o) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'pop-date' + (o === s ? ' active' : '');
+      b.innerHTML = '<span class="swatch" style="background:' + esc(DATA.colours[o.category]) + '"></span>' +
+                    esc(ukDate(o.date)) + (o.time ? ' ' + esc(o.time) : '');
+      b.addEventListener('click', function (e) {
+        L.DomEvent.stop(e);   // keep the click inside the pop-up
+        var popup = marker.getPopup();
+        if (popup) {
+          popup.setContent(buildPopup(marker, o));
+          popup.update();
+        }
+      });
+      list.appendChild(b);
+    });
+    wrap.appendChild(list);
+  }
+
+  var details = document.createElement('div');
+  details.innerHTML = popupHtml(s);
+  wrap.appendChild(details);
+  return wrap;
+}
+
+var map = L.map('map', { attributionControl: false, zoomControl: false });
+// Panes set the drawing order. Leaflet's sample circles are in the overlay pane (400).
+// CSO and WWTW symbols go just below that, so samples sit on top of them.
+// Site codes go above the samples and above the cluster icons.
+map.createPane('infraPane');
+map.getPane('infraPane').style.zIndex = 390;
+map.createPane('sitePane');
+map.getPane('sitePane').style.zIndex = 620;
+map.createPane('searchPane');
+map.getPane('searchPane').style.zIndex = 640;
+// Attribution goes in the bottom-right corner, so it can share that corner with the caption
+map.attributionControl = L.control.attribution({ position: 'bottomright' }).addTo(map);
+
+var ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
+var BASEMAPS = [
+  { id: 'esri-street', name: 'Streets (Esri)', nativeZoom: 19,
+    url: ESRI + 'World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles &copy; Esri, OpenStreetMap contributors' },
+  { id: 'osm', name: 'OpenStreetMap standard', nativeZoom: 19,
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' },
+  { id: 'otm', name: 'Topographic (OpenTopoMap)', nativeZoom: 17,
+    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    attribution: 'Map data &copy; OpenStreetMap contributors, SRTM | Style &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)' },
+  { id: 'esri-topo', name: 'Topographic (Esri)', nativeZoom: 19,
+    url: ESRI + 'World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles &copy; Esri' },
+  { id: 'esri-sat', name: 'Satellite (Esri)', nativeZoom: 18,
+    url: ESRI + 'World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles &copy; Esri, Maxar, Earthstar Geographics' },
+  { id: 'esri-light', name: 'Light grey (Esri)', nativeZoom: 16,
+    url: ESRI + 'Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles &copy; Esri' },
+  { id: 'esri-dark', name: 'Dark grey (Esri)', nativeZoom: 16,
+    url: ESRI + 'Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles &copy; Esri' }
+];
+
+var baseId = 'esri-street';
+if (SAVED.base && BASEMAPS.some(function (b) { return b.id === SAVED.base; })) baseId = SAVED.base;
+var baseLayer = null;
+var baseListBuilt = false;
+var baseBtn = document.getElementById('base-btn');
+var baseList = document.getElementById('base-list');
+
+function basemapById(id) {
+  for (var i = 0; i < BASEMAPS.length; i++) {
+    if (BASEMAPS[i].id === id) return BASEMAPS[i];
+  }
+  return BASEMAPS[0];
+}
+
+// One real tile near Lymington (zoom 12), used as the example picture for a style
+function thumbUrl(b) {
+  var z = 12, n = Math.pow(2, z), lat = 50.76, lng = -1.54;
+  var x = Math.floor((lng + 180) / 360 * n);
+  var r = lat * Math.PI / 180;
+  var y = Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n);
+  return b.url.replace('{s}', 'a').replace('{z}', z).replace('{x}', x).replace('{y}', y);
+}
+
+function setThumb(el, b) {
+  el.style.backgroundImage = 'url("' + thumbUrl(b) + '")';
+}
+
+function markSelected() {
+  var opts = baseList.querySelectorAll('.base-opt');
+  opts.forEach(function (li) {
+    li.setAttribute('aria-selected', String(li.getAttribute('data-id') === baseId));
+  });
+}
+
+// Switches the basemap. The attribution control updates itself when the layer changes.
+function setBasemap(id) {
+  var b = basemapById(id);
+  if (baseLayer) map.removeLayer(baseLayer);
+  baseLayer = L.tileLayer(b.url, {
+    maxZoom: 19,
+    maxNativeZoom: b.nativeZoom,
+    subdomains: 'abc',
+    attribution: b.attribution
+  });
+  baseLayer.addTo(map);
+  baseId = id;
+  setThumb(document.getElementById('base-thumb'), b);
+  document.getElementById('base-name').textContent = b.name;
+  markSelected();
+  saveSettings();
+}
+
+// The list is built the first time it is opened, so the example tiles load only when wanted
+function buildBaseList() {
+  if (baseListBuilt) return;
+  baseListBuilt = true;
+  BASEMAPS.forEach(function (b) {
+    var li = document.createElement('li');
+    li.className = 'base-opt';
+    li.setAttribute('role', 'option');
+    li.setAttribute('tabindex', '0');
+    li.setAttribute('data-id', b.id);
+    var th = document.createElement('span');
+    th.className = 'base-thumb';
+    setThumb(th, b);
+    li.appendChild(th);
+    li.appendChild(document.createTextNode(b.name));
+    li.addEventListener('click', function () {
+      setBasemap(b.id);
+      toggleBaseList(false);
+    });
+    li.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        setBasemap(b.id);
+        toggleBaseList(false);
+        baseBtn.focus();
+      }
+    });
+    baseList.appendChild(li);
+  });
+  markSelected();
+}
+
+function toggleBaseList(open) {
+  if (open) buildBaseList();
+  baseList.hidden = !open;
+  baseBtn.setAttribute('aria-expanded', String(open));
+}
+
+baseBtn.addEventListener('click', function () { toggleBaseList(baseList.hidden); });
+
+setBasemap(baseId);
+map.setView([50.8, -1.6], 10);
+
+// The pop-up lists samples by the zoom level at the time it opened, so close it when the zoom changes
+map.on('zoomstart', function () { map.closePopup(); });
+
+L.control.scale({
+  position: 'bottomleft',
+  metric: true,   // kilometres
+  imperial: true   // miles and feet
+}).addTo(map);
+
+// Zoom buttons and Zoom extents: one bar at the bottom left, added after the scale so it sits above it.
+// The + and - buttons are left out when the main input is a touch screen (pointer: coarse),
+// where pinching works and the buttons only take up space. Zoom extents is always shown.
+var isTouchDevice = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+var showZoomButtons = !isTouchDevice;
+
+// Fits the map to the samples currently on show (as the filters stand). With none, returns to the starting view.
+function zoomExtents() {
+  if (!fitToVisible()) {
+    programmaticMove = true;
+    map.setView([50.8, -1.6], 10);
+    programmaticMove = false;
+  }
+}
+
+var viewControl = L.control({ position: 'bottomleft' });
+viewControl.onAdd = function () {
+  var bar = L.DomUtil.create('div', 'leaflet-bar leaflet-control view-bar');
+  var zoomIn = null;
+  var zoomOut = null;
+
+  function makeButton(html, title, cls, action) {
+    var a = L.DomUtil.create('a', cls, bar);
+    a.innerHTML = html;
+    a.href = '#';
+    a.title = title;
+    a.setAttribute('role', 'button');
+    a.setAttribute('aria-label', title);
+    L.DomEvent.on(a, 'click', L.DomEvent.stop);
+    L.DomEvent.on(a, 'click', function () {
+      if (!a.classList.contains('leaflet-disabled')) action();
+    });
+    return a;
+  }
+
+  function updateDisabled() {
+    if (!zoomIn) return;
+    zoomIn.classList.toggle('leaflet-disabled', map.getZoom() >= map.getMaxZoom());
+    zoomOut.classList.toggle('leaflet-disabled', map.getZoom() <= map.getMinZoom());
+  }
+
+  if (showZoomButtons) {
+    zoomIn = makeButton('&#43;', 'Zoom in', 'leaflet-control-zoom-in', function () { map.zoomIn(); });
+    zoomOut = makeButton('&#8722;', 'Zoom out', 'leaflet-control-zoom-out', function () { map.zoomOut(); });
+    map.on('zoomend zoomlevelschange', updateDisabled);
+    updateDisabled();
+  }
+
+  makeButton('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
+             'Zoom extents', 'view-extents', zoomExtents);
+
+  L.DomEvent.disableClickPropagation(bar);
+  return bar;
+};
+viewControl.addTo(map);
+
+// Static caption at the bottom right, styled like the Leaflet attribution
+var captionControl = L.control({ position: 'bottomright' });
+captionControl.onAdd = function () {
+  var div = L.DomUtil.create('div', 'leaflet-control-attribution leaflet-control');
+  div.textContent = 'Data ' + DATA.generated + '  |  Site ' + DATA.siteVersion + '  |  © ' + DATA.year + ' NFWW';
+  return div;
+};
+captionControl.addTo(map);
+
+var layers = {};    // one group per month: a cluster group or a plain group, depending on the toggle
+var markers = {};   // the marker objects for each month, kept so the groups can be rebuilt
+var counts = {};
+DATA.samples.forEach(function (s) {
+  counts[s.month] = (counts[s.month] || 0) + 1;
+});
+
+// Draws a cluster in the colour of its most severe sample, showing the number of samples
+function clusterIcon(cluster) {
+  var children = cluster.getAllChildMarkers();
+  var worst = 'Absent';
+  children.forEach(function (m) {
+    if (SEVERITY[m.options.category] > SEVERITY[worst]) worst = m.options.category;
+  });
+  var textColour = worst === 'Med' ? '#000' : '#fff';
+  return L.divIcon({
+    className: 'wq-cluster-icon',
+    iconSize: [40, 40],
+    html: '<div style="box-sizing:border-box;width:40px;height:40px;border-radius:50%;' +
+          'background:' + DATA.colours[worst] + ';border:2px solid #333;color:' + textColour + ';' +
+          'font:bold 13px Arial,Helvetica,sans-serif;line-height:36px;text-align:center;' +
+          'box-shadow:0 1px 4px rgba(0,0,0,.4);">' + children.length + '</div>'
+  });
+}
+
+// Puts the month layers on the map oldest first, so the latest samples are drawn on top.
+// In Range mode every month stays on, and the date filter is applied per marker through isVisible().
+// Called after any month is switched on or off, or the markers are rebuilt.
+function drawMonths() {
+  DATA.months.slice().reverse().forEach(function (m) {
+    if (map.hasLayer(layers[m])) map.removeLayer(layers[m]);
+    if (dateMode === 'range' || monthOn[m]) layers[m].addTo(map);
+  });
+  fitToVisible();
+  updateLabels();
+  updateDownloadCount();
+}
+
+var clusteringOn = SAVED.cluster === true;
+var monthBox = document.getElementById('months');
+
+// Creates an empty group for one month, clustered or plain depending on the toggle
+function makeGroup() {
+  if (clusteringOn) {
+    return L.markerClusterGroup({ maxClusterRadius: 40, iconCreateFunction: clusterIcon });
+  }
+  return L.featureGroup();
+}
+
+// Rebuilds every month's group after a filter or the cluster toggle changes,
+// only adding markers that are currently visible, then restacks the months
+function rebuildGroups() {
+  DATA.months.forEach(function (m) {
+    if (map.hasLayer(layers[m])) map.removeLayer(layers[m]);
+    layers[m].clearLayers();
+    layers[m] = makeGroup();
+    markers[m].forEach(function (mk) {
+      if (isVisible(mk)) layers[m].addLayer(mk);
+    });
+  });
+  drawMonths();
+  saveSettings();
+}
+
+// True only while the script moves the map, so filter-driven refits don't close the tool boxes
+var programmaticMove = false;
+
+// Fits the map to the samples that are in a month switched on and currently visible
+function fitToVisible() {
+  var bounds = L.latLngBounds([]);
+  DATA.months.forEach(function (m) {
+    if (!map.hasLayer(layers[m])) return;
+    markers[m].forEach(function (mk) {
+      if (isVisible(mk)) bounds.extend(mk.getLatLng());
+    });
+  });
+  if (!bounds.isValid()) return false;
+  programmaticMove = true;
+  map.fitBounds(bounds, { padding: [30, 30], maxZoom: 14 });
+  programmaticMove = false;
+  return true;
+}
+
+// Build one group per month, with a tick box in the filter box. All months are on by default.
+DATA.months.forEach(function (m) {
+  markers[m] = [];
+
+  DATA.samples.forEach(function (s) {
+    if (s.month !== m) return;
+    var marker = L.circleMarker([s.lat, s.lng], {
+      radius: 8,
+      color: '#333',
+      weight: 1,
+      fillColor: DATA.colours[s.category],
+      fillOpacity: 0.9,
+      category: s.category,
+      catchment: catName(s)
+    });
+    marker.wqSample = s;   // lets the parameter switch find the sample again
+    marker.bindTooltip(esc(s.siteName || s.siteCode || 'Sample'), { direction: 'top', offset: [0, -8] });
+    marker.bindPopup(function () { return buildPopup(marker, s); }, { maxWidth: 380, maxHeight: 420 });
+    markers[m].push(marker);
+  });
+
+  layers[m] = makeGroup();
+  markers[m].forEach(function (mk) {
+    if (isVisible(mk)) layers[m].addLayer(mk);
+  });
+
+  var label = document.createElement('label');
+  var box = document.createElement('input');
+  box.type = 'checkbox';
+  box.checked = true;
+  box.addEventListener('change', function () {
+    monthOn[m] = box.checked;
+    drawMonths();
+  });
+  label.appendChild(box);
+  label.appendChild(document.createTextNode(' ' + monthLabel(m) + ' (' + (counts[m] || 0) + ')'));
+  monthBox.appendChild(label);
+});
+
+// Put the months on the map, oldest first
+drawMonths();
+
+document.getElementById('cluster-toggle').addEventListener('change', function (e) {
+  clusteringOn = e.target.checked;
+  rebuildGroups();
+});
+
+// Monitoring-site diamonds. Shown or hidden from the Legend's Other Layers section. Off by default.
+// Active sites only: inactive sites are used for matching uncoded samples but are never drawn.
+// Not affected by the date, catchment or colour filters, and not used when fitting the map.
+var sitesOn = SAVED.sites === true;
+var siteLayer = L.layerGroup();
+DATA.sites.forEach(function (st) {
+  var marker = L.marker([st.lat, st.lng], {
+    pane: 'sitePane',
+    icon: L.divIcon({
+      className: 'site-icon',
+      iconSize: [12, 12],
+      iconAnchor: [6, 6],
+      html: '<div class="site-diamond"></div>'
+    }),
+    interactive: false,   // clicks pass through to any sample underneath
+    keyboard: false
+  });
+  marker.bindTooltip(esc(st.code), {
+    permanent: true,
+    direction: 'right',
+    offset: [8, 0],
+    className: 'site-code-label'
+  });
+  siteLayer.addLayer(marker);
+});
+
+// CSO and WWTW points, in one layer, switched on from the Legend's Other Layers section.
+// Both types are shown as a dark brown triangle. They are not affected by the date,
+// catchment or colour filters, and they are not used when fitting the map.
+var infraOn = SAVED.infra === true;
+var infraSaved = infraOn;   // what is stored: the visitor's own tick, not a switch-on made by Search
+var infraLayer = L.layerGroup();
+var INFRA_COLOUR = '#7A5901';
+
+function infraShape() {
+  return '<path d="M9 1 L17 17 L1 17 Z" fill="' + INFRA_COLOUR + '" stroke="#fff" stroke-width="1.5"/>';
+}
+
+function infraIcon() {
+  return L.divIcon({
+    className: 'infra-icon',
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
+    html: '<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">' + infraShape() + '</svg>'
+  });
+}
+
+function infraPopup(st) {
+  var html = '<div class="pop-title">' + esc(st.name) + '</div>';
+  html += '<div class="pop-cat" style="border-left: 4px solid ' + INFRA_COLOUR + ';">' +
+          esc('Sewer overflow or treatment works') + '</div>';
+  html += '<table class="details">';
+  if (st.operator) html += '<tr><th>Operator</th><td>' + esc(st.operator) + '</td></tr>';
+  if (st.noData) {
+    html += '<tr><th>2025</th><td>No data</td></tr>';
+  } else {
+    html += '<tr><th>Spills in 2025</th><td>' + esc(st.spills) + '</td></tr>';
+    html += '<tr><th>Hours spilling in 2025</th><td>' + esc(st.hours) + '</td></tr>';
+  }
+  if (st.uptime !== null) html += '<tr><th>Monitor operational</th><td>' + esc(st.uptime) + '% of 2025</td></tr>';
+  if (st.water) html += '<tr><th>Discharges to</th><td>' + esc(st.water) + '</td></tr>';
+  html += '</table>';
+  return html;
+}
+
+(DATA.infra || []).forEach(function (st) {
+  var marker = L.marker([st.lat, st.lng], { pane: 'infraPane', icon: infraIcon() });
+  marker.bindTooltip(esc(st.name), { direction: 'top', offset: [0, -8] });
+  marker.bindPopup(infraPopup(st), { maxWidth: 340, maxHeight: 420 });
+  infraLayer.addLayer(marker);
+});
+
+// Switch on any Other Layers that were on last time
+if (sitesOn) siteLayer.addTo(map);
+if (infraOn) infraLayer.addTo(map);
+
+// Catchment tick boxes. All on by default.
+var catchBox = document.getElementById('catchments');
+Object.keys(catchmentOn).sort().forEach(function (name) {
+  var label = document.createElement('label');
+  var box = document.createElement('input');
+  box.type = 'checkbox';
+  box.checked = catchmentOn[name];
+  box.addEventListener('change', function () {
+    catchmentOn[name] = box.checked;
+    rebuildGroups();
+  });
+  label.appendChild(box);
+  label.appendChild(document.createTextNode(' ' + name));
+  catchBox.appendChild(label);
+});
+
+// Turns every month on or off at once, keeping the tick boxes in step
+function setAllMonths(on) {
+  var boxes = monthBox.querySelectorAll('input[type=checkbox]');
+  DATA.months.forEach(function (m, i) {
+    boxes[i].checked = on;
+    monthOn[m] = on;
+  });
+  drawMonths();
+}
+
+// Turns every catchment on or off at once, keeping the tick boxes in step
+function setAllCatchments(on) {
+  var boxes = catchBox.querySelectorAll('input[type=checkbox]');
+  Object.keys(catchmentOn).sort().forEach(function (name, i) {
+    boxes[i].checked = on;
+    catchmentOn[name] = on;
+  });
+  rebuildGroups();
+}
+
+document.getElementById('months-all').addEventListener('click', function () { setAllMonths(true); });
+document.getElementById('months-none').addEventListener('click', function () { setAllMonths(false); });
+document.getElementById('catchments-all').addEventListener('click', function () { setAllCatchments(true); });
+document.getElementById('catchments-none').addEventListener('click', function () { setAllCatchments(false); });
+
+// Date selection: Range (default) or Months. Switching keeps each method's own settings.
+document.querySelectorAll('input[name="datemode"]').forEach(function (radio) {
+  radio.addEventListener('change', function () {
+    if (!radio.checked) return;
+    dateMode = radio.value;
+    document.getElementById('range-controls').hidden = (dateMode !== 'range');
+    document.getElementById('month-controls').hidden = (dateMode !== 'months');
+    rebuildGroups();
+  });
+});
+
+// End date and prior days. A blank or invalid entry is ignored, so the last valid range stays in use.
+var endInput = document.getElementById('end-date');
+var daysInput = document.getElementById('range-days');
+endInput.value = rangeEnd;
+daysInput.value = String(rangeDays);
+document.querySelector('input[name="datemode"][value="' + dateMode + '"]').checked = true;
+document.getElementById('range-controls').hidden = (dateMode !== 'range');
+document.getElementById('month-controls').hidden = (dateMode !== 'months');
+
+function readRangeInputs() {
+  var end = endInput.value;
+  var days = Number(daysInput.value);
+  if (/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(end) && daysInput.value !== '' &&
+      Number.isInteger(days) && days >= 0) {
+    rangeEnd = end;
+    rangeDays = days;
+    rebuildGroups();
+  }
+}
+endInput.addEventListener('change', readRangeInputs);
+daysInput.addEventListener('change', readRangeInputs);
+
+fitToVisible();
+
+// Shows or hides a map layer
+function setOverlay(layer, on) {
+  if (on) layer.addTo(map);
+  else map.removeLayer(layer);
+  saveSettings();
+}
+
+// One row in the Other Layers section: a tick box, a symbol and the name.
+// The hint, if any, shows as a hover tooltip on the whole row.
+function layerRow(key, name, hint, symbol, isOn, onChange) {
+  var row = document.createElement('label');
+  row.className = 'layer-row';
+  if (hint) row.title = hint;
+  var box = document.createElement('input');
+  box.type = 'checkbox';
+  box.checked = isOn;
+  box.addEventListener('change', function () { onChange(box.checked); });
+  row.appendChild(box);
+  var sym = document.createElement('span');
+  sym.innerHTML = symbol;
+  row.appendChild(sym);
+  row.appendChild(document.createTextNode(' ' + name));
+  key.appendChild(row);
+}
+
+// Colour key for the parameter on show, with a tick box per band, then the Other Layers section.
+// Rebuilt when the parameter changes, so the title and ranges always match.
+// The Other Layers tick boxes read their state from infraOn and sitesOn, so they keep their settings.
+function buildKey() {
+  var key = document.getElementById('key');
+  var p = DATA.params[currentParam];
+  key.innerHTML = '';
+
+  var title = document.createElement('b');
+  title.textContent = p.title;
+  key.appendChild(title);
+  addHelpButton(key, 'legendParameter', 'Parameter');   // follows the title, on the same line
+
+  DATA.legendOrder.forEach(function (c) {
+    var label = document.createElement('label');
+    var box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = colourOn[c];
+    box.addEventListener('change', function () {
+      colourOn[c] = box.checked;
+      rebuildGroups();
+    });
+    label.appendChild(box);
+    label.appendChild(document.createTextNode(' '));
+    var swatch = document.createElement('span');
+    swatch.className = 'swatch';
+    swatch.style.background = DATA.colours[c];
+    label.appendChild(swatch);
+    label.appendChild(document.createTextNode(p.labels[c]));
+    key.appendChild(label);
+  });
+
+  // Puts every colour band back on, without touching the filters or the display settings
+  var resetBands = document.createElement('div');
+  resetBands.style.marginTop = '6px';
+  var resetBandsBtn = document.createElement('button');
+  resetBandsBtn.type = 'button';
+  resetBandsBtn.className = 'reset-link';
+  resetBandsBtn.textContent = 'Reset colour bands';
+  resetBandsBtn.addEventListener('click', function () {
+    DATA.legendOrder.forEach(function (c) { colourOn[c] = true; });
+    buildKey();
+    rebuildGroups();
+  });
+  resetBands.appendChild(resetBandsBtn);
+  key.appendChild(resetBands);
+
+  // Other Layers: switchable overlays, each with a tick box
+  var heading = document.createElement('div');
+  heading.style.marginTop = '8px';
+  heading.innerHTML = '<b>Other Layers</b>';
+  addHelpButton(heading, 'legendLayers', 'Other layers');
+  key.appendChild(heading);
+
+  var infraSymbol = '<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">' +
+                    infraShape() + '</svg>';
+  var diamondSymbol = '<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">' +
+                      '<polygon points="9,2 16,9 9,16 2,9" fill="#fff" stroke="#222" stroke-width="2"/></svg>';
+
+  layerRow(key, 'CSO & WWTW', 'Combined sewer overflows & Wastewater treatment works', infraSymbol, infraOn, function (on) {
+    infraOn = on;
+    infraSaved = on;
+    setOverlay(infraLayer, on);
+  });
+  layerRow(key, 'Sample sites', 'Active sampling sites', diamondSymbol, sitesOn, function (on) {
+    sitesOn = on;
+    setOverlay(siteLayer, on);
+  });
+}
+
+// Gives every marker its label (a permanent tooltip) or, with no label, the
+// hover tooltip showing the site name. Samples with no label text keep the hover tooltip.
+function applyLabels() {
+  DATA.months.forEach(function (m) {
+    markers[m].forEach(function (mk) {
+      var text = labelFor(mk.wqSample);
+      mk.unbindTooltip();
+      if (labelMode !== 'none' && text !== '') {
+        mk.bindTooltip(esc(text), {
+          permanent: true,
+          direction: 'right',
+          offset: [10, 0],
+          className: 'sample-label'
+        });
+      } else {
+        mk.bindTooltip(esc(mk.wqSample.siteName || mk.wqSample.siteCode || 'Sample'), {
+          direction: 'top',
+          offset: [0, -8]
+        });
+      }
+    });
+  });
+  updateLabels();
+}
+
+// With labels on, only the top sample at each spot shows its label. Samples overlap
+// as they do for the pop-ups (OVERLAP_PX at the current zoom). Only samples that are on
+// the map count, so samples hidden by a filter or inside a cluster do not hide another's label.
+// The top sample is the latest one, as it is drawn on top.
+function updateLabels() {
+  if (labelMode === 'none') return;
+
+  var shown = [];
+  DATA.months.forEach(function (m) {
+    markers[m].forEach(function (mk) {
+      if (isVisible(mk) && map.hasLayer(mk)) shown.push(mk);
+    });
+  });
+
+  var pts = shown.map(function (mk) { return map.latLngToContainerPoint(mk.getLatLng()); });
+  var topSet = new Set();
+  shown.forEach(function (mk, i) {
+    var isTop = true;
+    for (var j = 0; j < shown.length; j++) {
+      if (j !== i &&
+          shown[j].wqSample.idx > mk.wqSample.idx &&
+          pts[i].distanceTo(pts[j]) <= OVERLAP_PX) {
+        isTop = false;
+        break;
+      }
+    }
+    if (isTop) topSet.add(mk);
+  });
+
+  DATA.months.forEach(function (m) {
+    markers[m].forEach(function (mk) {
+      if (labelFor(mk.wqSample) === '') return;   // no label text, so nothing to show or hide
+      if (topSet.has(mk)) {
+        mk.openTooltip();
+      } else {
+        mk.closeTooltip();
+      }
+    });
+  });
+}
+
+// Re-check the labels after a zoom. The second check runs after the clusters have updated.
+map.on('zoomend', function () {
+  updateLabels();
+  setTimeout(updateLabels, 300);
+});
+
+// Switches the map to another parameter: recolours every sample, resets the colour
+// tick boxes, rebuilds the key and redraws the markers
+function setParam(p) {
+  currentParam = p;
+  DATA.samples.forEach(function (s) { s.category = s.cats[p]; });
+  DATA.months.forEach(function (m) {
+    markers[m].forEach(function (mk) {
+      mk.options.category = mk.wqSample.category;
+      mk.setStyle({ fillColor: DATA.colours[mk.wqSample.category] });
+    });
+  });
+  DATA.legendOrder.forEach(function (c) { colourOn[c] = true; });
+  buildKey();
+  applyLabels();
+  rebuildGroups();
+}
+
+document.querySelectorAll('input[name="param"]').forEach(function (radio) {
+  radio.addEventListener('change', function () {
+    if (radio.checked) setParam(radio.value);
+  });
+});
+
+var labelSelect = document.getElementById('label-select');
+labelSelect.value = labelMode;   // keeps the drop-down in step if the browser restores form values on reload
+labelSelect.addEventListener('change', function () {
+  labelMode = labelSelect.value;
+  applyLabels();
+  saveSettings();
+});
+
+buildKey();
+
+// Tool buttons: place them on the left of the map, under the zoom buttons
+var toolsEl = document.getElementById('tools');
+L.DomEvent.disableClickPropagation(toolsEl);
+L.DomEvent.disableScrollPropagation(toolsEl);
+var toolsControl = L.control({ position: 'topleft' });
+toolsControl.onAdd = function () { return toolsEl; };
+toolsControl.addTo(map);
+
+// Legend: a button at the top right of the map opens the legend box over it.
+// The button sits in a Leaflet control so the map treats it as part of the map controls.
+var legendWrapEl = document.getElementById('legend-wrap');
+L.DomEvent.disableClickPropagation(legendWrapEl);
+L.DomEvent.disableScrollPropagation(legendWrapEl);
+var legendControl = L.control({ position: 'topright' });
+legendControl.onAdd = function () { return legendWrapEl; };
+legendControl.addTo(map);
+
+// Filter and Display boxes: open on their button, close on the same button, their cross,
+// a map click, a user zoom or Escape.
+var toolWraps = document.querySelectorAll('.tool-wrap[data-tool="filter"], .tool-wrap[data-tool="display"], .tool-wrap[data-tool="search"], .tool-wrap[data-tool="download"]');
+
+function setTool(name) {   // name is 'filter', 'display' or null (close both)
+  closeHelp(false);
+  toolWraps.forEach(function (w) {
+    var open = w.getAttribute('data-tool') === name;
+    w.querySelector('.tool-btn').setAttribute('aria-expanded', String(open));
+    w.querySelector('.tool-box').classList.toggle('open', open);
+  });
+}
+
+toolWraps.forEach(function (w) {
+  var name = w.getAttribute('data-tool');
+  var btn = w.querySelector('.tool-btn');
+  var closeBtn = w.querySelector('.tool-close');
+
+  btn.addEventListener('click', function () {
+    var isOpen = btn.getAttribute('aria-expanded') === 'true';
+    setTool(isOpen ? null : name);
+  });
+
+  closeBtn.addEventListener('click', function () {
+    setTool(null);
+  });
+});
+
+// Legend box: opens on its button and stays open until its cross is clicked.
+// Map clicks, zooms, Escape and opening the Filter or Display boxes do not close it.
+var legendWrap = document.querySelector('.tool-wrap[data-tool="legend"]');
+var legendBtn = legendWrap.querySelector('.tool-btn');
+var legendBox = legendWrap.querySelector('.tool-box');
+var legendClose = legendWrap.querySelector('.tool-close');
+
+function setLegend(open) {
+  legendBtn.setAttribute('aria-expanded', String(open));
+  legendBox.classList.toggle('open', open);
+}
+
+legendBtn.addEventListener('click', function () { setLegend(true); });
+legendClose.addEventListener('click', function () { setLegend(false); });
+
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') setTool(null);
+});
+
+map.on('click', function () {
+  setTool(null);
+});
+
+// Zooming by the user closes the Filter or Display box. Zooms made by the script are ignored.
+map.on('zoomstart', function () {
+  if (!programmaticMove) setTool(null);
+});
+
+// ---- Help popups ----
+// A small ? button to the right of a caption opens a popup with that caption's help text, which
+// comes from the Help Google Doc (DATA.help, keyed by topic). A caption with no text gets no button.
+// Captions in the page carry data-help="topic" and get their button here; the two Legend
+// captions are added in buildKey(). One popup is shared by all the buttons.
+var helpPop = document.getElementById('help-pop');
+var helpTitle = document.getElementById('help-title');
+var helpBody = document.getElementById('help-body');
+var helpAnchor = null;   // the ? button whose popup is open
+
+function closeHelp(returnFocus) {
+  if (!helpPop || helpPop.hidden) return;
+  helpPop.hidden = true;
+  if (helpAnchor) {
+    helpAnchor.setAttribute('aria-expanded', 'false');
+    if (returnFocus && document.body.contains(helpAnchor)) helpAnchor.focus();
+  }
+  helpAnchor = null;
+}
+
+// Puts the popup just under its button (or above it if there is no room), kept inside the window
+function placeHelp(btn) {
+  var r = btn.getBoundingClientRect();
+  var w = helpPop.offsetWidth;
+  var h = helpPop.offsetHeight;
+  var vw = document.documentElement.clientWidth;
+  var vh = document.documentElement.clientHeight;
+  var left = Math.max(8, Math.min(r.left, vw - w - 8));
+  var top = r.bottom + 6;
+  if (top + h > vh - 8) top = r.top - h - 6;
+  if (top < 8) top = 8;
+  helpPop.style.left = left + 'px';
+  helpPop.style.top = top + 'px';
+}
+
+function openHelp(btn, topic, caption) {
+  if (helpAnchor) helpAnchor.setAttribute('aria-expanded', 'false');
+  helpAnchor = btn;
+  btn.setAttribute('aria-expanded', 'true');
+  helpTitle.textContent = caption;
+  helpBody.innerHTML = DATA.help[topic];
+  helpBody.scrollTop = 0;
+  helpPop.hidden = false;
+  placeHelp(btn);
+  helpPop.querySelector('.help-close').focus();
+}
+
+// Adds a ? button at the end of a caption element
+function addHelpButton(el, topic, caption) {
+  if (!DATA.help || !DATA.help[topic]) return;
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'help-btn';
+  btn.textContent = '?';
+  btn.setAttribute('aria-label', 'Help: ' + caption);
+  btn.setAttribute('aria-haspopup', 'dialog');
+  btn.setAttribute('aria-expanded', 'false');
+  btn.addEventListener('click', function (e) {
+    e.preventDefault();    // inside a caption that opens and closes a section: do not toggle it
+    e.stopPropagation();
+    if (helpAnchor === btn) closeHelp(true);
+    else openHelp(btn, topic, caption);
+  });
+  el.appendChild(btn);
+}
+
+document.querySelectorAll('[data-help]').forEach(function (el) {
+  addHelpButton(el, el.getAttribute('data-help'), el.textContent.trim());
+});
+
+document.getElementById('help-close').addEventListener('click', function () { closeHelp(true); });
+
+// A press anywhere else closes the popup (capture phase, because the map and tool boxes stop clicks)
+document.addEventListener('pointerdown', function (e) {
+  if (!helpPop || helpPop.hidden) return;
+  var t = e.target;
+  if (helpPop.contains(t) || (t.closest && t.closest('.help-btn'))) return;
+  closeHelp(false);
+}, true);
+
+// Escape closes the popup first, and leaves the open boxes alone
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape' && helpPop && !helpPop.hidden) {
+    e.stopImmediatePropagation();
+    closeHelp(true);
+  }
+}, true);
+
+window.addEventListener('resize', function () {
+  if (helpPop && !helpPop.hidden && helpAnchor) placeHelp(helpAnchor);
+});
+
+fitToVisible();
+
+// Open the legend on load. The short delay stops the map's initial zoom and fit from interfering.
+// On a touch device (phone or tablet) it stays closed, to leave the map clear. The Legend button opens it.
+setTimeout(function () {
+  if (!isTouchDevice) setLegend(true);
+}, 300);
+
+// Make the Display box controls match the restored settings
+document.querySelectorAll('input[name="param"]').forEach(function (r) {
+  r.checked = (r.value === currentParam);
+});
+document.getElementById('cluster-toggle').checked = clusteringOn;
+if (labelMode !== 'none') applyLabels();
+
+// Reset display settings: parameter, sample labels, basemap, grouping and the two map layers.
+// Done in place (no reload), so the filters are left alone. Saving is paused while the
+// controls change, then the new state is saved once.
+function resetDisplay() {
+  var was = settingsReady;
+  settingsReady = false;
+
+  labelMode = 'none';
+  labelSelect.value = 'none';
+
+  clusteringOn = false;
+  document.getElementById('cluster-toggle').checked = false;
+
+  infraOn = false;
+  infraSaved = false;
+  map.removeLayer(infraLayer);
+  sitesOn = false;
+  map.removeLayer(siteLayer);
+
+  toggleBaseList(false);
+  setBasemap('esri-street');
+
+  document.querySelectorAll('input[name="param"]').forEach(function (r) {
+    r.checked = (r.value === DATA.defaultParam);
+  });
+  setParam(DATA.defaultParam);   // also rebuilds the Legend, so the layer ticks follow
+
+  settingsReady = was;
+  saveSettings();
+}
+
+// Reset filter settings: Range mode, end date today, 365 prior days, all months and all catchments on.
+// Done in place (no reload), so the display settings are left alone.
+function resetFilter() {
+  var was = settingsReady;
+  settingsReady = false;
+
+  dateMode = 'range';
+  rangeEnd = todayIso();
+  rangeDays = 365;
+  endInput.value = rangeEnd;
+  daysInput.value = '365';
+  document.querySelector('input[name="datemode"][value="range"]').checked = true;
+  document.getElementById('range-controls').hidden = false;
+  document.getElementById('month-controls').hidden = true;
+
+  setAllMonths(true);
+  setAllCatchments(true);   // also redraws the map
+
+  settingsReady = was;
+  saveSettings();
+}
+
+document.getElementById('reset-display').addEventListener('click', resetDisplay);
+document.getElementById('reset-filter').addEventListener('click', resetFilter);
+
+// ---- Search panel ----
+// A drop-down with text entry. Nothing is listed until 3 characters are typed. Each word typed
+// must appear in the code or name. Choosing a site highlights it and zooms to it.
+var SEARCH_ZOOM = 16;
+var SEARCH = (DATA.search || []).map(function (s) {
+  var label;
+  if (s.kind) label = s.name;
+  else if (s.code && s.name) label = s.code + ' – ' + s.name;
+  else label = s.code || s.name || 'Unnamed site';
+  return { label: label, lower: label.toLowerCase(), lat: s.lat, lng: s.lng, kind: s.kind || '' };
+}).sort(function (a, b) {
+  return a.label.localeCompare(b.label, 'en', { sensitivity: 'base', numeric: true });
+});
+
+var searchWrap = document.querySelector('.tool-wrap[data-tool="search"]');
+var searchBtn = searchWrap.querySelector('.tool-btn');
+var searchBox = searchWrap.querySelector('.tool-box');
+var searchInput = document.getElementById('search-input');
+var searchList = document.getElementById('search-list');
+var searchMsg = document.getElementById('search-msg');
+var searchClear = document.getElementById('search-clear');
+var searchShown = [];       // the entries currently listed
+var searchActive = -1;      // the entry highlighted by the arrow keys
+var searchMarker = null;    // the ring on the map
+
+function hideSearchList() {
+  searchList.hidden = true;
+  searchList.innerHTML = '';
+  searchShown = [];
+  searchActive = -1;
+  searchInput.setAttribute('aria-expanded', 'false');
+  searchInput.removeAttribute('aria-activedescendant');
+}
+
+function setSearchActive(i) {
+  var opts = searchList.querySelectorAll('.search-opt');
+  if (opts.length === 0) return;
+  if (i < 0) i = opts.length - 1;
+  if (i >= opts.length) i = 0;
+  searchActive = i;
+  opts.forEach(function (li, n) {
+    li.classList.toggle('active', n === i);
+    li.setAttribute('aria-selected', String(n === i));
+  });
+  searchInput.setAttribute('aria-activedescendant', opts[i].id);
+  opts[i].scrollIntoView({ block: 'nearest' });
+}
+
+// Lists the entries that match what has been typed
+function updateSearchList() {
+  var q = searchInput.value.toLowerCase().replace(/[ ]+/g, ' ').trim();
+  hideSearchList();
+  if (q === '') {
+    searchMsg.textContent = '';
+    return;
+  }
+  if (q.length < 3) {
+    searchMsg.textContent = 'Type at least 3 characters to see matching sites.';
+    return;
+  }
+  var words = q.split(' ');
+  searchShown = SEARCH.filter(function (s) {
+    return words.every(function (w) { return s.lower.indexOf(w) !== -1; });
+  });
+  if (searchShown.length === 0) {
+    searchMsg.textContent = 'No matching sites.';
+    return;
+  }
+  searchMsg.textContent = searchShown.length === 1 ? '1 matching site' : searchShown.length + ' matching sites';
+  searchShown.forEach(function (s, n) {
+    var li = document.createElement('li');
+    li.className = 'search-opt';
+    li.id = 'search-opt-' + n;
+    li.setAttribute('role', 'option');
+    li.setAttribute('aria-selected', 'false');
+    li.textContent = s.label;
+    li.addEventListener('click', function () { chooseSite(s); });
+    searchList.appendChild(li);
+  });
+  searchList.hidden = false;
+  searchInput.setAttribute('aria-expanded', 'true');
+}
+
+// Says whether a chosen site has samples on the map under the current filters (dates, catchments
+// and colour ticks). Sampling sites only: infrastructure has no samples, so it gets no note.
+function siteSampleNote(s) {
+  if (s.kind) return '';
+  var total = 0;
+  var shown = 0;
+  DATA.samples.forEach(function (o) {
+    if (map.distance([s.lat, s.lng], [o.lat, o.lng]) > 30) return;
+    total++;
+    if (dateOn(o) && catchmentOn[catName(o)] && colourOn[o.category]) shown++;
+  });
+  if (shown > 0) return '';
+  return total === 0 ? ' – no samples recorded' : ' – no samples in the current filters';
+}
+
+// Puts a ring on the site and zooms to it, with the site in the centre of the map.
+// The flag stops this zoom from closing the panel, as for the other script-driven moves.
+function highlightSite(s) {
+  if (searchMarker) map.removeLayer(searchMarker);
+  searchMarker = L.marker([s.lat, s.lng], {
+    pane: 'searchPane',
+    icon: L.divIcon({
+      className: 'search-icon',
+      iconSize: [36, 36],
+      iconAnchor: [18, 18],
+      html: '<div class="search-ring"></div>'
+    }),
+    interactive: false,   // taps pass through to any sample underneath
+    keyboard: false
+  });
+  searchMarker.bindTooltip(esc(s.label + siteSampleNote(s)), {
+    permanent: true,
+    direction: 'right',
+    offset: [20, 0],
+    className: 'sample-label'
+  });
+  searchMarker.addTo(map);
+  programmaticMove = true;
+  map.setView([s.lat, s.lng], Math.max(map.getZoom(), SEARCH_ZOOM));
+  setTimeout(function () { programmaticMove = false; }, 600);
+}
+
+function chooseSite(s) {
+  searchInput.value = s.label;
+  hideSearchList();
+  searchMsg.textContent = '';
+  // A CSO or WwTW is only drawn when its layer is on, so switch the layer on for this visit.
+  // This is not saved: infraSaved keeps the visitor's own choice.
+  if (s.kind && !infraOn) {
+    infraOn = true;
+    infraLayer.addTo(map);
+    buildKey();   // keeps the Legend tick box in step
+  }
+  highlightSite(s);
+}
+
+function clearSearch() {
+  searchInput.value = '';
+  hideSearchList();
+  searchMsg.textContent = '';
+  if (searchMarker) {
+    map.removeLayer(searchMarker);
+    searchMarker = null;
+  }
+  searchInput.focus();
+}
+
+searchInput.addEventListener('input', updateSearchList);
+searchInput.addEventListener('keydown', function (e) {
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (searchList.hidden) updateSearchList();
+    setSearchActive(searchActive + 1);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    setSearchActive(searchActive - 1);
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (searchActive >= 0) chooseSite(searchShown[searchActive]);
+    else if (searchShown.length === 1) chooseSite(searchShown[0]);
+  } else if (e.key === 'Escape' && !searchList.hidden) {
+    e.stopPropagation();   // close the list first; a second Escape closes the panel
+    hideSearchList();
+  }
+});
+searchClear.addEventListener('click', clearSearch);
+
+// A click elsewhere in the panel closes the list
+searchBox.addEventListener('click', function (e) {
+  if (!e.target.closest('.search-input') && !e.target.closest('.search-list')) hideSearchList();
+});
+
+// Opening the panel puts the cursor in the field
+searchBtn.addEventListener('click', function () {
+  if (searchBtn.getAttribute('aria-expanded') === 'true') searchInput.focus();
+});
+
+// ---- Data download ----
+// Builds a CSV in the browser from the samples that pass the Dates and Catchments filters.
+// Columns are the sampling date, time, latitude, longitude and the three results only.
+// The colour tick boxes in the Legend do not affect it.
+var CR = String.fromCharCode(13);
+var LF = String.fromCharCode(10);
+
+function downloadSamples() {
+  return DATA.samples.filter(function (s) {
+    return dateOn(s) && catchmentOn[catName(s)];
+  });
+}
+
+function updateDownloadCount() {
+  var c = document.getElementById('dl-count');
+  var b = document.getElementById('dl-button');
+  if (!c || !b) return;
+  var n = downloadSamples().length;
+  if (n === 0) {
+    c.textContent = 'No samples match the current Filter settings.';
+  } else {
+    c.textContent = n + (n === 1 ? ' sample matches' : ' samples match') + ' the current Filter settings.';
+  }
+  b.disabled = (n === 0);
+}
+
+// One CSV cell. Text that a spreadsheet could read as a formula gets a leading apostrophe.
+function csvCell(v) {
+  var s = String(v === null || v === undefined ? '' : v);
+  if (/^[=@]/.test(s) || /^[+-][^0-9. ]/.test(s)) s = "'" + s;
+  if (s.indexOf('"') !== -1 || s.indexOf(',') !== -1 || s.indexOf(CR) !== -1 || s.indexOf(LF) !== -1) {
+    s = '"' + s.split('"').join('""') + '"';
+  }
+  return s;
+}
+
+// Set to false to leave nitrate and phosphate ranges (such as 0.2-0.35) blank as well.
+// Kyoritsu test results are recorded as ranges, so blanking them empties most of those columns.
+var DOWNLOAD_KEEP_RANGES = true;
+
+// A result for the file: a plain number as recorded (commas removed), or a range such as 0.2-0.35.
+// Anything else ("N/A", "Too High to Count", "Dry stream - N/A", "-", blank) becomes ''.
+function cleanResult(v) {
+  var s = String(v === null || v === undefined ? '' : v).split(',').join('').trim();
+  if (/^[0-9]+([.][0-9]+)?$/.test(s)) return s;
+  if (DOWNLOAD_KEEP_RANGES) {
+    var m = s.match(/^([0-9]+(?:[.][0-9]+)?) *(?:-|–|to) *([0-9]+(?:[.][0-9]+)?)$/i);
+    if (m) return m[1] + '-' + m[2];
+  }
+  return '';
+}
+
+// The CSV text for the samples selected. Columns: Date (yyyy-mm-dd), Time (HH:mm),
+// latitude, longitude, then nitrates, phosphates and E.coli, each header with its unit.
+function buildCsv(samples) {
+  var params = DATA.downloadParams || [];
+  var head = ['Date', 'Time', 'Latitude', 'Longitude'].concat(params.map(function (p) {
+    return p.unit ? p.label + ' (' + p.unit + ')' : p.label;
+  }));
+  var lines = [head.map(csvCell).join(',')];
+  samples.forEach(function (s) {
+    var byLabel = {};
+    s.details.forEach(function (d) { byLabel[d.label] = d.value; });
+    var row = [s.date, s.time || '', s.lat, s.lng];
+    params.forEach(function (p) { row.push(cleanResult(byLabel[p.column])); });
+    lines.push(row.map(csvCell).join(','));
+  });
+  // The byte order mark makes Excel read accents and dashes correctly
+  return String.fromCharCode(0xFEFF) + lines.join(CR + LF) + CR + LF;
+}
+
+function runDownload() {
+  var msg = document.getElementById('dl-msg');
+  var samples = downloadSamples();
+  if (samples.length === 0) {
+    msg.textContent = 'There are no samples to download.';
+    return;
+  }
+  var name = 'nfww-samples-' + todayIso() + '.csv';
+  var blob = new Blob([buildCsv(samples)], { type: 'text/csv;charset=utf-8' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  msg.textContent = 'Downloaded ' + samples.length + (samples.length === 1 ? ' sample as ' : ' samples as ') + name;
+}
+
+document.getElementById('dl-button').addEventListener('click', runDownload);
+document.querySelector('.tool-wrap[data-tool="download"] .tool-btn').addEventListener('click', function () {
+  document.getElementById('dl-msg').textContent = '';
+  updateDownloadCount();
+});
+updateDownloadCount();
+
+// ---- Copy map image ----
+// The copy button under Download puts a picture of the map on the clipboard. html2canvas (loaded from cdnjs the
+// first time the button is pressed, pinned to 1.4.1) draws the map to a canvas. The tool buttons and zoom bar are
+// left out. The Legend key is added to the picture even if its box is closed (COPY_MAP_LEGEND). The browser needs
+// a secure page (https) and permission to write to the clipboard.
+var HTML2CANVAS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+var COPY_MAP_LEGEND = true;
+var copyToast = document.getElementById('copy-toast');
+var copyToastTimer = null;
+var copyBusy = false;
+var html2canvasLoading = null;
+
+function showToast(text, ms) {
+  if (!copyToast) return;
+  copyToast.textContent = text;
+  copyToast.hidden = false;
+  if (copyToastTimer) clearTimeout(copyToastTimer);
+  copyToastTimer = ms ? setTimeout(function () { copyToast.hidden = true; }, ms) : null;
+}
+
+function canCopyImages() {
+  return !!(window.isSecureContext !== false && navigator.clipboard && navigator.clipboard.write && window.ClipboardItem);
+}
+
+function loadHtml2canvas() {
+  if (window.html2canvas) return Promise.resolve();
+  if (!html2canvasLoading) {
+    html2canvasLoading = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = HTML2CANVAS_URL;
+      s.onload = function () { resolve(); };
+      s.onerror = function () {
+        html2canvasLoading = null;
+        reject(new Error('the image library could not be loaded'));
+      };
+      document.head.appendChild(s);
+    });
+  }
+  return html2canvasLoading;
+}
+
+// A promise of the map picture as a PNG
+function mapImageBlob() {
+  return loadHtml2canvas().then(function () {
+    return window.html2canvas(document.getElementById('map'), {
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#dddddd',
+      scale: Math.min(window.devicePixelRatio || 1, 2),
+      ignoreElements: function (el) {
+        return el.id === 'tools' || (el.classList && el.classList.contains('view-bar'));
+      },
+      onclone: function (doc) {
+        var legend = doc.getElementById('legend-wrap');
+        if (!legend) return;
+        var box = legend.querySelector('.tool-box');
+        if (box && COPY_MAP_LEGEND) box.classList.add('open');
+        var btn = legend.querySelector('.tool-btn');
+        if (btn) btn.style.visibility = 'hidden';
+        legend.querySelectorAll('.tool-close, .help-btn').forEach(function (x) { x.parentNode.removeChild(x); });
+      }
+    });
+  }).then(function (canvas) {
+    return new Promise(function (resolve, reject) {
+      canvas.toBlob(function (b) {
+        if (b) resolve(b); else reject(new Error('the picture could not be made'));
+      }, 'image/png');
+    });
+  });
+}
+
+var copyMapBtn = document.getElementById('copy-map-btn');
+copyMapBtn.addEventListener('click', function () {
+  if (copyBusy) return;
+  if (!canCopyImages()) {
+    showToast('This browser cannot copy pictures to the clipboard here. The page must be opened over https.', 6000);
+    return;
+  }
+  copyBusy = true;
+  copyMapBtn.setAttribute('aria-busy', 'true');
+  showToast('Copying the map image...', 0);
+  function done() {
+    copyBusy = false;
+    copyMapBtn.removeAttribute('aria-busy');
+  }
+  try {
+    // The clipboard is asked now, inside the click, and is given the picture when it is ready
+    navigator.clipboard.write([new ClipboardItem({ 'image/png': mapImageBlob() })]).then(function () {
+      showToast('Map image copied to the clipboard.', 4000);
+    }, function (e) {
+      showToast('The map image could not be copied (' + ((e && (e.message || e.name)) || 'unknown error') + ').', 7000);
+    }).then(done);
+  } catch (e) {
+    showToast('The map image could not be copied (' + ((e && (e.message || e.name)) || 'unknown error') + ').', 7000);
+    done();
+  }
+});
+
+// From here on, changes are saved
+settingsReady = true;
+
+</script>
+</body>
+</html>

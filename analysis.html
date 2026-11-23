@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Analysis</title>
+<style>
+  html, body { margin: 0; min-height: 100%; font-family: Arial, Helvetica, sans-serif; color: #222; background: #fff; }
+  main { max-width: 900px; margin: 0 auto; padding: 24px 20px 48px; }
+  h1 { font-size: 22px; margin: 0 0 8px; color: #2e5e3e; }
+  h2 { font-size: 18px; margin: 0 0 8px; color: #2e5e3e; }
+  p { line-height: 1.5; color: #444; margin: 0 0 8px; }
+  .note { font-size: 13px; color: #555; }
+  section.chart { margin-top: 28px; padding-top: 18px; border-top: 1px solid #ddd; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px 22px; margin: 6px 0 12px; font-size: 14px; }
+  .controls label { display: flex; align-items: center; gap: 6px; }
+  select { font: 14px Arial, Helvetica, sans-serif; padding: 4px 6px; max-width: 100%; }
+  .chart-box { position: relative; width: 100%; height: 380px; }
+  @media (max-width: 520px) {
+    .chart-box { height: 320px; }
+  }
+  .empty { font-size: 14px; color: #555; padding: 24px 0; margin: 0; }
+  .legend-list { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; margin-top: 10px; }
+  .legend-item { font: 13px Arial, Helvetica, sans-serif; color: #222; background: #fff; border: 1px solid #ccc;
+                 border-radius: 4px; padding: 3px 8px; cursor: pointer; }
+  .legend-item.off { opacity: 0.4; text-decoration: line-through; }
+  /* Message shown after a copy button is pressed */
+  .copy-toast { position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%); z-index: 2500;
+                max-width: calc(100vw - 32px); box-sizing: border-box; padding: 8px 14px; border-radius: 6px;
+                background: #2e5e3e; color: #fff; font: 14px/1.4 Arial, Helvetica, sans-serif;
+                box-shadow: 0 2px 10px rgba(0,0,0,.4); pointer-events: none; }
+  .copy-toast[hidden] { display: none; }
+  .copy-btn { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; margin-left: auto;
+              padding: 0; background: #fff; color: #2e5e3e; border: 1px solid #bbb; border-radius: 4px; cursor: pointer; }
+  .copy-btn:hover { background: #f0f6f1; }
+  .copy-btn:focus-visible { outline: 3px solid #f4d03f; outline-offset: 2px; }
+  .copy-btn svg { width: 20px; height: 20px; }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 5px;
+            vertical-align: middle; border: 1px solid #555; }
+  /* Help buttons (a small ? to the right of a heading) and the help popup */
+  .help-btn { display: inline-block; box-sizing: border-box; width: 18px; height: 18px; margin: 0 0 0 8px; padding: 0;
+              border: 1.5px solid #499ED5; border-radius: 50%; background: #499ED5; color: #fff;
+              font: bold 12px/15px Arial, Helvetica, sans-serif; text-align: center; vertical-align: middle; cursor: pointer; }
+  .help-btn:hover, .help-btn[aria-expanded="true"] { background: #2f7fb8; border-color: #2f7fb8; color: #fff; }
+  .help-btn:focus-visible { outline: 3px solid #f4d03f; outline-offset: 1px; }
+  @media (pointer: coarse) { .help-btn { width: 24px; height: 24px; font-size: 14px; line-height: 21px; } }
+  .help-pop { position: fixed; z-index: 2000; width: 300px; max-width: calc(100vw - 16px); box-sizing: border-box;
+              background: #fff; border-radius: 6px; padding: 10px 12px; box-shadow: 0 2px 10px rgba(0,0,0,.4);
+              font: 13px/1.45 Arial, Helvetica, sans-serif; color: #222; }
+  .help-pop[hidden] { display: none; }
+  .help-title { font-weight: bold; font-size: 14px; margin: 0 30px 6px 0; }
+  .help-body { max-height: 55vh; overflow: auto; }
+  .help-body p { margin: 0 0 8px; color: #222; line-height: 1.45; }
+  .help-body ul, .help-body ol { margin: 0 0 8px; padding-left: 20px; }
+  .help-body li { margin: 0 0 3px; }
+  .help-body a { color: #1a5fa8; }
+  .help-pop .help-close { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; padding: 0;
+                          display: flex; align-items: center; justify-content: center;
+                          background: none; border: none; border-radius: 4px; cursor: pointer; color: #444; }
+  .help-pop .help-close:hover { background: #f0f0f0; color: #000; }
+  .help-pop .help-close:focus-visible { outline: 3px solid #f4d03f; outline-offset: 1px; }
+  .help-pop .help-close svg { width: 14px; height: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Analysis</h1>
+  <p class="note">Results are plotted as the map shows them: a range is plotted at its highest figure. Samples with no usable number, such as "Too High to Count" for E.coli, are not plotted. Only samples with a site code are included.</p>
+
+  <section class="chart" aria-labelledby="site-heading">
+    <h2 data-help="analysisSite"><span id="site-heading">Results over time for a site</span></h2>
+    <div class="controls">
+      <label>Parameter <select id="site-param"></select></label>
+      <label>Site <select id="site-select"></select></label>
+      <button type="button" class="copy-btn" id="site-copy" aria-label="Copy chart image to clipboard" title="Copy chart image to clipboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+        </svg>
+      </button>
+    </div>
+    <div class="chart-box">
+      <canvas id="site-canvas" role="img" aria-label="Line chart of results over time for the selected site"></canvas>
+      <p class="empty" id="site-empty" style="display:none"></p>
+    </div>
+    <div class="band-key" id="site-bands"></div>
+  </section>
+
+  <section class="chart" aria-labelledby="catch-heading">
+    <h2 data-help="analysisCatchment"><span id="catch-heading">Results over time for a catchment</span></h2>
+    <div class="controls">
+      <label>Parameter <select id="catch-param"></select></label>
+      <label>Catchment <select id="catch-select"></select></label>
+      <button type="button" class="copy-btn" id="catch-copy" aria-label="Copy chart image to clipboard" title="Copy chart image to clipboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+        </svg>
+      </button>
+    </div>
+    <div class="chart-box">
+      <canvas id="catch-canvas" role="img" aria-label="Line chart of results over time for the selected catchment, one line per site"></canvas>
+      <p class="empty" id="catch-empty" style="display:none"></p>
+    </div>
+    <div class="legend-list" id="catch-legend"></div>
+    <div class="band-key" id="catch-bands"></div>
+  </section>
+</main>
+<div id="help-pop" class="help-pop" role="dialog" aria-label="Help" hidden>
+  <button type="button" class="help-close" id="help-close" aria-label="Close help" title="Close">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+      <path d="M6 6l12 12M18 6L6 18"/>
+    </svg>
+  </button>
+  <div class="help-title" id="help-title"></div>
+  <div class="help-body" id="help-body"></div>
+</div>
+<div id="copy-toast" class="copy-toast" role="status" aria-live="polite" hidden></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+// data.js is loaded with a number added to its address that changes every 5 minutes, so a browser does not keep
+// showing an old copy for long after Create data has replaced the file. The tag is written here, not in the HTML,
+// because the number is made in the browser.
+document.write('<script src="data.js?v=' + Math.floor(Date.now() / 300000) + '"></scr' + 'ipt>');
+</script>
+<script>
+// If data.js is missing, or was made by a different version of the script than this page, stop with a message
+// instead of showing wrong or empty results.
+var DATA_PROBLEM = '';
+if (typeof NFWW_DATA === 'undefined') {
+  DATA_PROBLEM = 'The data file (data.js) could not be loaded. Check that data.js has been uploaded to the same folder as this page, then reload the page.';
+} else if (NFWW_DATA.siteVersion !== 'V0.6.12') {
+  DATA_PROBLEM = 'This page is version V0.6.12 but its data file (data.js) is version ' + NFWW_DATA.siteVersion + '. Run both Create data and Create website, and upload all the files to the same folder. If you have just uploaded them, reload the page with Ctrl+F5.';
+}
+if (DATA_PROBLEM) {
+  document.body.innerHTML = '<p style="margin:24px;max-width:600px;font:16px/1.5 Arial,Helvetica,sans-serif;color:#222">' + DATA_PROBLEM + '</p>';
+  throw new Error(DATA_PROBLEM);
+}
+var DATA = NFWW_DATA;
+
+var DAY = 86400000;
+var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+var PALETTE = ['#1f77b4', '#d62728', '#2ca02c', '#9467bd', '#ff7f0e',
+               '#17becf', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22'];
+
+// Transparency of the coloured bands, as a hex suffix (4D is about 30%)
+var BAND_ALPHA = '4D';
+
+// The current Chart.js instance for each chart, so it can be replaced when a drop-down changes
+var charts = { site: null, catch: null };
+
+// Draws the coloured bands behind the data. The band edges are worked out from the
+// vertical axis scale each time the chart is drawn, so the bands follow the axis.
+var colourBandsPlugin = {
+  id: 'colourBands',
+  beforeDraw: function (chart, args, opts) {
+    if (!opts || !opts.bands) return;
+    var ctx = chart.ctx;
+    var area = chart.chartArea;
+    var yScale = chart.scales.y;
+    if (!area || !yScale) return;
+
+    opts.bands.forEach(function (b) {
+      var top = Math.max(yScale.getPixelForValue(Math.min(b.to, yScale.max)), area.top);
+      var bottom = Math.min(yScale.getPixelForValue(Math.max(b.from, yScale.min)), area.bottom);
+      if (bottom <= top) return;   // band is above or below the axis range
+      ctx.save();
+      ctx.fillStyle = b.colour + BAND_ALPHA;
+      ctx.fillRect(area.left, top, area.right - area.left, bottom - top);
+      ctx.restore();
+    });
+  }
+};
+Chart.register(colourBandsPlugin);
+
+// The colour bands for one parameter, from the limits in the config file
+function bandsFor(key) {
+  var p = DATA.params[key];
+  var t = p.thresholds;
+  var c = DATA.colours;
+  return [
+    { from: 0, to: t.Med, colour: c.Low, label: p.labels.Low },
+    { from: t.Med, to: t.High, colour: c.Med, label: p.labels.Med },
+    { from: t.High, to: t.VHigh, colour: c.High, label: p.labels.High },
+    { from: t.VHigh, to: Infinity, colour: c.VHigh, label: p.labels.VHigh }
+  ];
+}
+
+// Shows the key for the colour bands beneath a chart
+function drawBandKey(name, bands) {
+  var key = document.getElementById(name + '-bands');
+  key.innerHTML = '';
+  bands.forEach(function (b) {
+    var item = document.createElement('span');
+    var swatch = document.createElement('span');
+    swatch.className = 'swatch';
+    swatch.style.background = b.colour;
+    item.appendChild(swatch);
+    item.appendChild(document.createTextNode(b.label));
+    key.appendChild(item);
+  });
+}
+
+// Builds the site legend beneath the catchment chart. Clicking a site shows or hides its line.
+// Kept outside the chart, so the legend never reduces the height of the graph.
+function buildLegend(datasets) {
+  var box = document.getElementById('catch-legend');
+  box.innerHTML = '';
+  datasets.forEach(function (ds, i) {
+    var item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'legend-item';
+    var swatch = document.createElement('span');
+    swatch.className = 'swatch';
+    swatch.style.background = ds.borderColor;
+    item.appendChild(swatch);
+    item.appendChild(document.createTextNode(ds.label));
+    item.addEventListener('click', function () {
+      var chart = charts.catch;
+      if (!chart) return;
+      var meta = chart.getDatasetMeta(i);
+      meta.hidden = !meta.hidden;
+      item.classList.toggle('off', meta.hidden);
+      chart.update();
+    });
+    box.appendChild(item);
+  });
+}
+
+// Sample date and time as milliseconds, for sorting and positioning
+function timeMs(s) {
+  var d = s.d.split('-');
+  var t = (s.t || '00:00').split(':');
+  return Date.UTC(+d[0], +d[1] - 1, +d[2], +t[0], +t[1]);
+}
+
+// 'yyyy-mm-dd' to 'dd/mm/yyyy'
+function ukDate(iso) {
+  var p = iso.split('-');
+  return p[2] + '/' + p[1] + '/' + p[0];
+}
+
+// 'Jun 2026' for a time in milliseconds
+function monthLabel(t) {
+  var d = new Date(t);
+  return MONTHS[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
+}
+
+// Value for tooltips: whole numbers with thousands separators, decimals trimmed
+function fmtValue(v, dp) {
+  return dp === 0 ? Math.round(v).toLocaleString('en-GB') : String(parseFloat(v.toFixed(dp)));
+}
+
+// Value for the vertical axis
+function fmtAxis(v, dp) {
+  return dp === 0 ? Math.round(v).toLocaleString('en-GB') : String(parseFloat(v.toFixed(3)));
+}
+
+function uniqueSorted(list) {
+  return list.filter(function (v, i, a) { return a.indexOf(v) === i; }).sort();
+}
+
+// Points for the samples that pass 'keep' and have a usable value for the parameter.
+// Sorted by date and time, so each line runs from left to right in the order the samples were taken.
+function pointsFor(keep, key) {
+  var pts = [];
+  DATA.analysisRows.forEach(function (s) {
+    var v = s.v[key];
+    if (!keep(s) || v === null || v === undefined) return;
+    pts.push({ x: timeMs(s), y: v, day: s.d, label: ukDate(s.d) + (s.t ? ' ' + s.t : '') });
+  });
+  pts.sort(function (a, b) { return a.x - b.x; });
+  return pts;
+}
+
+// Draws (or redraws) one line chart. name is 'site' or 'catch'; datasets is a list of
+// {label, borderColor, data}; showLegend turns the legend on for the multi-line chart.
+function drawChart(name, key, datasets, showLegend) {
+  var p = DATA.params[key];
+  var bands = bandsFor(key);
+  var canvas = document.getElementById(name + '-canvas');
+  var empty = document.getElementById(name + '-empty');
+
+  drawBandKey(name, bands);
+
+  if (charts[name]) {
+    charts[name].destroy();
+    charts[name] = null;
+  }
+
+  var minT = Infinity, maxT = -Infinity, count = 0;
+  datasets.forEach(function (ds) {
+    ds.data.forEach(function (pt) {
+      minT = Math.min(minT, pt.x);
+      maxT = Math.max(maxT, pt.x);
+      count++;
+    });
+  });
+
+  if (count === 0) {
+    canvas.style.display = 'none';
+    empty.style.display = 'block';
+    empty.textContent = 'No ' + p.label + ' results to plot for this selection.';
+    return;
+  }
+  canvas.style.display = 'block';
+  empty.style.display = 'none';
+
+  // A single sampling day would leave no width to draw, so widen the range either side
+  if (maxT === minT) {
+    minT -= 15 * DAY;
+    maxT += 15 * DAY;
+  }
+
+  // Horizontal ticks: the start of each month within the date range
+  var monthTicks = [];
+  var first = new Date(minT);
+  var cur = Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), 1);
+  while (cur <= maxT) {
+    if (cur >= minT) monthTicks.push(cur);
+    var nd = new Date(cur);
+    cur = Date.UTC(nd.getUTCFullYear(), nd.getUTCMonth() + 1, 1);
+  }
+  if (monthTicks.length === 0) monthTicks.push(minT);
+
+  // Line style: a line joining the points, with a blob at each data point
+  datasets.forEach(function (ds) {
+    ds.backgroundColor = ds.borderColor;
+    ds.pointBackgroundColor = ds.borderColor;
+    ds.pointBorderColor = '#fff';
+    ds.pointBorderWidth = 1;
+    ds.pointRadius = 5;
+    ds.pointHoverRadius = 7;
+    ds.borderWidth = 2;
+    ds.tension = 0;
+    ds.fill = false;
+    ds.showLine = true;
+    ds.spanGaps = false;
+    // Same-day repeats are shown as separate dots: no line between two samples on the same day
+    ds.segment = {
+      borderColor: function (ctx) {
+        return ctx.p0.raw.day === ctx.p1.raw.day ? 'transparent' : undefined;
+      }
+    };
+  });
+
+  charts[name] = new Chart(canvas, {
+    type: 'line',
+    data: { datasets: datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      parsing: false,
+      interaction: { mode: 'nearest', intersect: true },
+      plugins: {
+        legend: { display: false },
+        colourBands: { bands: bands },
+        tooltip: {
+          callbacks: {
+            title: function (items) { return items[0].raw.label; },
+            label: function (item) {
+              return item.dataset.label + ': ' + fmtValue(item.raw.y, p.dp) + ' ' + p.unit;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: 'linear',
+          min: minT,
+          max: maxT,
+          title: { display: true, text: 'Date' },
+          afterBuildTicks: function (scale) {
+            scale.ticks = monthTicks.map(function (t) { return { value: t }; });
+          },
+          ticks: {
+            autoSkip: true,
+            maxRotation: 45,
+            minRotation: 0,
+            callback: function (v) { return monthLabel(v); }
+          },
+          grid: { color: '#f0f0f0' }
+        },
+        y: {
+          beginAtZero: true,
+          title: { display: true, text: p.label + ' (' + p.unit + ')' },
+          ticks: {
+            callback: function (v) { return fmtAxis(v, p.dp); }
+          }
+        }
+      }
+    }
+  });
+}
+
+// Fills a drop-down and selects its first option
+function fillSelect(sel, options) {
+  sel.innerHTML = '';
+  if (options.length === 0) options = [{ value: '', text: 'No data' }];
+  options.forEach(function (o) {
+    var opt = document.createElement('option');
+    opt.value = o.value;
+    opt.textContent = o.text;
+    sel.appendChild(opt);
+  });
+  sel.selectedIndex = 0;
+}
+
+// Site names and catchments, taken from the samples
+var siteNames = {};
+DATA.analysisRows.forEach(function (s) {
+  if (!siteNames[s.code]) siteNames[s.code] = s.name || s.code;
+});
+var siteCodes = Object.keys(siteNames).sort();
+var catchments = uniqueSorted(DATA.analysisRows.map(function (s) { return s.catchment; }));
+
+function siteLabel(code) {
+  return siteNames[code] && siteNames[code] !== code ? code + ' – ' + siteNames[code] : code;
+}
+
+// Site codes in one catchment, sorted, so each keeps the same colour
+function sitesInCatchment(cat) {
+  return uniqueSorted(DATA.analysisRows
+    .filter(function (s) { return s.catchment === cat; })
+    .map(function (s) { return s.code; }));
+}
+
+function paramOptions() {
+  return DATA.paramOrder.map(function (k) { return { value: k, text: DATA.params[k].label }; });
+}
+
+function redrawSite() {
+  var key = document.getElementById('site-param').value;
+  var code = document.getElementById('site-select').value;
+  var pts = pointsFor(function (s) { return s.code === code; }, key);
+  drawChart('site', key, [{ label: siteLabel(code), borderColor: '#2e5e3e', data: pts }], false);
+}
+
+function redrawCatchment() {
+  var key = document.getElementById('catch-param').value;
+  var cat = document.getElementById('catch-select').value;
+  var datasets = [];
+  sitesInCatchment(cat).forEach(function (code, i) {
+    var pts = pointsFor(function (s) { return s.code === code && s.catchment === cat; }, key);
+    if (pts.length) {
+      datasets.push({ label: siteLabel(code), borderColor: PALETTE[i % PALETTE.length], data: pts });
+    }
+  });
+  drawChart('catch', key, datasets, false);
+  buildLegend(datasets);
+}
+
+// ---- Copy a chart to the clipboard ----
+// The copy button beside each chart's drop-downs puts a picture of that chart on the clipboard: a title line
+// (COPY_CHART_TITLE), the chart, the site legend (catchment chart, visible lines only) and the colour band key.
+// It is drawn on a canvas here, so no other library is needed. The browser needs a secure page (https).
+var COPY_CHART_TITLE = true;
+var COPY_FONT = 'Arial, Helvetica, sans-serif';
+var copyToast = document.getElementById('copy-toast');
+var copyToastTimer = null;
+var copyBusy = false;
+
+function showToast(text, ms) {
+  if (!copyToast) return;
+  copyToast.textContent = text;
+  copyToast.hidden = false;
+  if (copyToastTimer) clearTimeout(copyToastTimer);
+  copyToastTimer = ms ? setTimeout(function () { copyToast.hidden = true; }, ms) : null;
+}
+
+function canCopyImages() {
+  return !!(window.isSecureContext !== false && navigator.clipboard && navigator.clipboard.write && window.ClipboardItem);
+}
+
+// Splits text into lines no wider than maxW (the canvas font must already be set)
+function wrapLines(ctx, text, maxW) {
+  var words = String(text).split(' ');
+  var lines = [];
+  var cur = '';
+  words.forEach(function (w) {
+    var test = cur ? cur + ' ' + w : w;
+    if (cur && ctx.measureText(test).width > maxW) {
+      lines.push(cur);
+      cur = w;
+    } else {
+      cur = test;
+    }
+  });
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+// Places legend items (colour dot and text) in rows that fit maxW. Returns a list of rows of {it, x}.
+function layoutLegend(ctx, items, maxW) {
+  var rows = [[]];
+  var x = 0;
+  items.forEach(function (it) {
+    var w = 18 + ctx.measureText(it.text).width;
+    if (x > 0 && x + w > maxW) {
+      rows.push([]);
+      x = 0;
+    }
+    rows[rows.length - 1].push({ it: it, x: x });
+    x += w + 16;
+  });
+  return rows;
+}
+
+// Draws the picture for one chart ('site' or 'catch') on a new canvas, or returns null if there is no chart
+function chartImageCanvas(name) {
+  var chart = charts[name];
+  var src = document.getElementById(name + '-canvas');
+  if (!chart || !src || src.style.display === 'none' || !src.clientWidth) return null;
+  var key = document.getElementById(name === 'site' ? 'site-param' : 'catch-param').value;
+  var sel = document.getElementById(name === 'site' ? 'site-select' : 'catch-select').value;
+  var title = DATA.params[key].label + ' over time – ' + (name === 'site' ? siteLabel(sel) : sel + ' catchment');
+
+  var k = src.width / src.clientWidth;   // device pixels for each CSS pixel
+  var W = src.clientWidth;
+  var chartH = src.clientHeight;
+  var PAD = 12;
+  var ROW = 20;
+  var GAP = 8;
+  var inner = W - 2 * PAD;
+  var m = document.createElement('canvas').getContext('2d');
+
+  var titleLines = [];
+  if (COPY_CHART_TITLE) {
+    m.font = 'bold 15px ' + COPY_FONT;
+    titleLines = wrapLines(m, title, inner);
+  }
+  m.font = '13px ' + COPY_FONT;
+  var groups = [];
+  if (name === 'catch') {
+    var sites = [];
+    chart.data.datasets.forEach(function (ds, i) {
+      if (chart.isDatasetVisible(i)) sites.push({ colour: ds.borderColor, text: ds.label });
+    });
+    if (sites.length) groups.push(layoutLegend(m, sites, inner));
+  }
+  groups.push(layoutLegend(m, bandsFor(key).map(function (b) {
+    return { colour: b.colour, text: b.label };
+  }), inner));
+
+  var titleH = titleLines.length * ROW;
+  var legendH = 0;
+  groups.forEach(function (rows) { legendH += GAP + rows.length * ROW; });
+  var H = PAD + titleH + (titleH ? GAP : 0) + chartH + legendH + PAD;
+
+  var out = document.createElement('canvas');
+  out.width = Math.round(W * k);
+  out.height = Math.round(H * k);
+  var ctx = out.getContext('2d');
+  ctx.scale(k, k);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+  ctx.textBaseline = 'middle';
+
+  var y = PAD;
+  if (titleLines.length) {
+    ctx.font = 'bold 15px ' + COPY_FONT;
+    ctx.fillStyle = '#2e5e3e';
+    titleLines.forEach(function (line, i) { ctx.fillText(line, PAD, y + i * ROW + ROW / 2); });
+    y += titleH + GAP;
+  }
+  ctx.drawImage(src, 0, y, W, chartH);
+  y += chartH;
+
+  ctx.font = '13px ' + COPY_FONT;
+  groups.forEach(function (rows) {
+    y += GAP;
+    rows.forEach(function (row, r) {
+      row.forEach(function (e) {
+        var cx = PAD + e.x + 6;
+        var cy = y + r * ROW + ROW / 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+        ctx.fillStyle = e.it.colour;
+        ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = '#555';
+        ctx.stroke();
+        ctx.fillStyle = '#222';
+        ctx.fillText(e.it.text, PAD + e.x + 18, cy);
+      });
+    });
+    y += rows.length * ROW;
+  });
+  return out;
+}
+
+function copyChart(name) {
+  if (copyBusy) return;
+  if (!canCopyImages()) {
+    showToast('This browser cannot copy pictures to the clipboard here. The page must be opened over https.', 6000);
+    return;
+  }
+  function fail(e) {
+    showToast('The chart could not be copied (' + ((e && (e.message || e.name)) || 'unknown error') + ').', 7000);
+  }
+  copyBusy = true;
+  try {
+    var canvas = chartImageCanvas(name);
+    if (!canvas) {
+      showToast('There is no chart to copy for this selection.', 4000);
+      copyBusy = false;
+      return;
+    }
+    var blobPromise = new Promise(function (resolve, reject) {
+      canvas.toBlob(function (b) {
+        if (b) resolve(b); else reject(new Error('the picture could not be made'));
+      }, 'image/png');
+    });
+    navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })]).then(function () {
+      showToast('Chart image copied to the clipboard.', 4000);
+    }, fail).then(function () { copyBusy = false; });
+  } catch (e) {
+    fail(e);
+    copyBusy = false;
+  }
+}
+
+document.getElementById('site-copy').addEventListener('click', function () { copyChart('site'); });
+document.getElementById('catch-copy').addEventListener('click', function () { copyChart('catch'); });
+
+// Set up the drop-downs (defaults: E.coli, first site, first catchment)
+fillSelect(document.getElementById('site-param'), paramOptions());
+fillSelect(document.getElementById('catch-param'), paramOptions());
+document.getElementById('site-param').value = DATA.defaultParam;
+document.getElementById('catch-param').value = DATA.defaultParam;
+fillSelect(document.getElementById('site-select'), siteCodes.map(function (c) {
+  return { value: c, text: siteLabel(c) };
+}));
+fillSelect(document.getElementById('catch-select'), catchments.map(function (c) {
+  return { value: c, text: c };
+}));
+
+document.getElementById('site-param').addEventListener('change', redrawSite);
+document.getElementById('site-select').addEventListener('change', redrawSite);
+document.getElementById('catch-param').addEventListener('change', redrawCatchment);
+document.getElementById('catch-select').addEventListener('change', redrawCatchment);
+
+redrawSite();
+redrawCatchment();
+
+// ---- Help popups ----
+// A small ? button to the right of a heading opens a popup with that heading's help text, which comes
+// from the Help Google Doc (DATA.help, keyed by topic). A heading with no text gets no button.
+var helpPop = document.getElementById('help-pop');
+var helpTitle = document.getElementById('help-title');
+var helpBody = document.getElementById('help-body');
+var helpAnchor = null;   // the ? button whose popup is open
+
+function closeHelp(returnFocus) {
+  if (!helpPop || helpPop.hidden) return;
+  helpPop.hidden = true;
+  if (helpAnchor) {
+    helpAnchor.setAttribute('aria-expanded', 'false');
+    if (returnFocus && document.body.contains(helpAnchor)) helpAnchor.focus();
+  }
+  helpAnchor = null;
+}
+
+// Puts the popup just under its button (or above it if there is no room), kept inside the window
+function placeHelp(btn) {
+  var r = btn.getBoundingClientRect();
+  var w = helpPop.offsetWidth;
+  var h = helpPop.offsetHeight;
+  var vw = document.documentElement.clientWidth;
+  var vh = document.documentElement.clientHeight;
+  var left = Math.max(8, Math.min(r.left, vw - w - 8));
+  var top = r.bottom + 6;
+  if (top + h > vh - 8) top = r.top - h - 6;
+  if (top < 8) top = 8;
+  helpPop.style.left = left + 'px';
+  helpPop.style.top = top + 'px';
+}
+
+function openHelp(btn, topic, caption) {
+  if (helpAnchor) helpAnchor.setAttribute('aria-expanded', 'false');
+  helpAnchor = btn;
+  btn.setAttribute('aria-expanded', 'true');
+  helpTitle.textContent = caption;
+  helpBody.innerHTML = DATA.help[topic];
+  helpBody.scrollTop = 0;
+  helpPop.hidden = false;
+  placeHelp(btn);
+  helpPop.querySelector('.help-close').focus();
+}
+
+// Adds a ? button at the end of a heading element
+function addHelpButton(el, topic, caption) {
+  if (!DATA.help || !DATA.help[topic]) return;
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'help-btn';
+  btn.textContent = '?';
+  btn.setAttribute('aria-label', 'Help: ' + caption);
+  btn.setAttribute('aria-haspopup', 'dialog');
+  btn.setAttribute('aria-expanded', 'false');
+  btn.addEventListener('click', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (helpAnchor === btn) closeHelp(true);
+    else openHelp(btn, topic, caption);
+  });
+  el.appendChild(btn);
+}
+
+document.querySelectorAll('[data-help]').forEach(function (el) {
+  addHelpButton(el, el.getAttribute('data-help'), el.textContent.trim());
+});
+
+document.getElementById('help-close').addEventListener('click', function () { closeHelp(true); });
+
+// A press anywhere else closes the popup
+document.addEventListener('pointerdown', function (e) {
+  if (!helpPop || helpPop.hidden) return;
+  var t = e.target;
+  if (helpPop.contains(t) || (t.closest && t.closest('.help-btn'))) return;
+  closeHelp(false);
+}, true);
+
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape' && helpPop && !helpPop.hidden) closeHelp(true);
+});
+
+// The page scrolls, so the popup follows its button
+window.addEventListener('resize', function () {
+  if (helpPop && !helpPop.hidden && helpAnchor) placeHelp(helpAnchor);
+});
+window.addEventListener('scroll', function () {
+  if (helpPop && !helpPop.hidden && helpAnchor) placeHelp(helpAnchor);
+});
+</script>
+</body>
+</html>
