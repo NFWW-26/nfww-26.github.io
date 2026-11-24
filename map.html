@@ -387,8 +387,8 @@ document.write('<script src="data.js?v=' + Math.floor(Date.now() / 300000) + '">
 var DATA_PROBLEM = '';
 if (typeof NFWW_DATA === 'undefined') {
   DATA_PROBLEM = 'The data file (data.js) could not be loaded. Check that data.js has been uploaded to the same folder as this page, then reload the page.';
-} else if (NFWW_DATA.siteVersion !== 'V0.6.12') {
-  DATA_PROBLEM = 'This page is version V0.6.12 but its data file (data.js) is version ' + NFWW_DATA.siteVersion + '. Run both Create data and Create website, and upload all the files to the same folder. If you have just uploaded them, reload the page with Ctrl+F5.';
+} else if (NFWW_DATA.siteVersion !== 'V0.6.13') {
+  DATA_PROBLEM = 'This page is version V0.6.13 but its data file (data.js) is version ' + NFWW_DATA.siteVersion + '. Run both Create data and Create website, and upload all the files to the same folder. If you have just uploaded them, reload the page with Ctrl+F5.';
 }
 if (DATA_PROBLEM) {
   document.body.innerHTML = '<p style="margin:24px;max-width:600px;font:16px/1.5 Arial,Helvetica,sans-serif;color:#222">' + DATA_PROBLEM + '</p>';
