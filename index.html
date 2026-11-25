@@ -14,9 +14,31 @@
   #site-nav a:hover { background: #3d7450; }
   #site-nav a.active { border-bottom-color: #f4d03f; }
   #content { flex: 1 1 auto; width: 100%; border: 0; display: block; }
-  @media (max-width: 600px) {
-    #site-nav { font-size: 13px; }
-    #site-nav a { padding: 0 9px; }
+  /* Mobile bar and drawer: hidden on desktop */
+  #mobile-bar, #nav-scrim { display: none; }
+  @media (max-width: 600px), (pointer: coarse) and (max-width: 900px) {
+    #mobile-bar { display: flex; flex: 0 0 44px; height: 44px; align-items: center; background: #2e5e3e; color: #fff;
+                  font: bold 16px Arial, Helvetica, sans-serif; box-shadow: 0 1px 4px rgba(0,0,0,.3); z-index: 1;
+                  padding-left: env(safe-area-inset-left, 0px); }
+    #menu-btn { flex: 0 0 auto; width: 48px; height: 44px; margin: 0; padding: 0; border: 0; background: transparent;
+                cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    #menu-btn:focus-visible, #site-nav a:focus-visible { outline: 3px solid #f4d03f; outline-offset: -3px; }
+    #mobile-title { padding-left: 4px; }
+    #site-nav { position: fixed; top: 0; bottom: 0; left: 0; flex: none; height: auto; width: 260px; max-width: 80vw;
+                flex-direction: column; align-items: stretch; padding: 8px 0 8px env(safe-area-inset-left, 0px);
+                box-sizing: border-box; overflow-y: auto; font-size: 16px; z-index: 1000;
+                box-shadow: 2px 0 12px rgba(0,0,0,.4); transform: translateX(-100%); visibility: hidden;
+                transition: transform .25s ease, visibility 0s linear .25s; }
+    #site-nav a { min-height: 48px; padding: 0 20px; border-bottom: 0; border-left: 4px solid transparent; }
+    #site-nav a.active { border-left-color: #f4d03f; background: #3d7450; }
+    #nav-scrim { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 900; background: rgba(0,0,0,.45);
+                 opacity: 0; pointer-events: none; transition: opacity .25s ease; }
+    body { }
+    body.nav-open #site-nav { transform: translateX(0); visibility: visible; transition: transform .25s ease, visibility 0s; }
+    body.nav-open #nav-scrim { display: block; opacity: 1; pointer-events: auto; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #site-nav, #nav-scrim { transition: none !important; }
   }
   /* Intro window: covers the whole page until the visitor presses Accept */
   #intro { display: none; position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 9999;
@@ -42,13 +64,20 @@
 </style>
 </head>
 <body>
-<nav id="site-nav">
+<div id="mobile-bar">
+  <button type="button" id="menu-btn" aria-controls="site-nav" aria-expanded="false" aria-label="Open menu">
+    <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+  </button>
+  <span id="mobile-title">Map</span>
+</div>
+<nav id="site-nav" aria-label="Main menu">
   <a href="#about" data-page="about">About</a>
   <a href="#map" data-page="map">Map</a>
   <a href="#analysis" data-page="analysis">Analysis</a>
   <a href="https://www.newforestfoe.org.uk/copy-of-about-us" target="_blank" rel="noopener">Blog</a>
   <a href="https://www.learningapps.co.uk/moodle/xertetoolkits/play.php?template_id=3074" target="_blank" rel="noopener">Resources</a>
 </nav>
+<div id="nav-scrim"></div>
 <iframe id="content" title="Page content"></iframe>
 <div id="intro">
 <div id="intro-box" role="dialog" aria-modal="true" aria-label="Welcome to New Forest Water Watch" tabindex="-1">
@@ -77,6 +106,10 @@ var frame = document.getElementById('content');
 var links = document.querySelectorAll('#site-nav a[data-page]');
 var introEl = document.getElementById('intro');
 var introBox = document.getElementById('intro-box');
+var mobileBar = document.getElementById('mobile-bar');
+var menuBtn = document.getElementById('menu-btn');
+var scrim = document.getElementById('nav-scrim');
+var mobileTitle = document.getElementById('mobile-title');
 var started = false;
 
 function showPage() {
@@ -88,8 +121,10 @@ function showPage() {
   links.forEach(function (a) {
     var on = a.getAttribute('data-page') === name;
     a.classList.toggle('active', on);
-    if (on) a.setAttribute('aria-current', 'page');
-    else a.removeAttribute('aria-current');
+    if (on) {
+      a.setAttribute('aria-current', 'page');
+      if (mobileTitle) mobileTitle.textContent = a.textContent;
+    } else a.removeAttribute('aria-current');
   });
 }
 
@@ -130,7 +165,8 @@ function hadEarlierAcceptance() {
 
 // While the Intro is open, the menu and the pages behind it cannot be reached by mouse, touch or keyboard
 function setBlocked(on) {
-  [nav, frame].forEach(function (el) {
+  if (on) closeNav(false);
+  [nav, frame, mobileBar].forEach(function (el) {
     if (on) {
       el.setAttribute('inert', '');
       el.setAttribute('aria-hidden', 'true');
@@ -171,6 +207,39 @@ function accept() {
   var current = document.querySelector('#site-nav a.active');
   if (current) current.focus();
 }
+
+function openNav() {
+  document.body.classList.add('nav-open');
+  menuBtn.setAttribute('aria-expanded', 'true');
+  menuBtn.setAttribute('aria-label', 'Close menu');
+  var first = nav.querySelector('a.active') || nav.querySelector('a');
+  if (first) first.focus();
+}
+
+function closeNav(refocus) {
+  if (!document.body.classList.contains('nav-open')) return;
+  document.body.classList.remove('nav-open');
+  menuBtn.setAttribute('aria-expanded', 'false');
+  menuBtn.setAttribute('aria-label', 'Open menu');
+  if (refocus) menuBtn.focus();
+}
+
+menuBtn.addEventListener('click', function () {
+  if (document.body.classList.contains('nav-open')) closeNav(true);
+  else openNav();
+});
+scrim.addEventListener('click', function () { closeNav(true); });
+nav.addEventListener('click', function (e) {
+  var t = e.target;
+  while (t && t !== nav) {
+    if (t.tagName === 'A') { closeNav(false); return; }
+    t = t.parentNode;
+  }
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape' && document.body.classList.contains('nav-open')) closeNav(true);
+});
+window.addEventListener('resize', function () { closeNav(false); });
 
 window.addEventListener('hashchange', showPage);
 
