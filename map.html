@@ -151,6 +151,10 @@
                 box-shadow: 0 2px 10px rgba(0,0,0,.4); pointer-events: none; }
   .copy-toast[hidden] { display: none; }
   .tool-btn[aria-busy="true"] { opacity: .6; cursor: progress; }
+  /* Site codes mode (?scm=true): no tools, Legend or help popups */
+  body.scm #legend-wrap, body.scm #help-pop, body.scm #copy-toast, body.scm .help-btn { display: none !important; }
+  body.scm .tool-wrap[data-tool="filter"], body.scm .tool-wrap[data-tool="display"], body.scm .tool-wrap[data-tool="download"], body.scm #copy-wrap { display: none !important; }
+  body.scm .site-icon { cursor: pointer; }
   /* Download panel */
   .download-box { width: 280px; }
   .dl-text { margin: 0 0 8px; font-size: 14px; line-height: 1.4; white-space: normal; }
@@ -387,14 +391,21 @@ document.write('<script src="data.js?v=' + Math.floor(Date.now() / 300000) + '">
 var DATA_PROBLEM = '';
 if (typeof NFWW_DATA === 'undefined') {
   DATA_PROBLEM = 'The data file (data.js) could not be loaded. Check that data.js has been uploaded to the same folder as this page, then reload the page.';
-} else if (NFWW_DATA.siteVersion !== 'V0.6.13') {
-  DATA_PROBLEM = 'This page is version V0.6.13 but its data file (data.js) is version ' + NFWW_DATA.siteVersion + '. Run both Create data and Create website, and upload all the files to the same folder. If you have just uploaded them, reload the page with Ctrl+F5.';
+} else if (NFWW_DATA.siteVersion !== 'V0.6.14') {
+  DATA_PROBLEM = 'This page is version V0.6.14 but its data file (data.js) is version ' + NFWW_DATA.siteVersion + '. Run both Create data and Create website, and upload all the files to the same folder. If you have just uploaded them, reload the page with Ctrl+F5.';
 }
 if (DATA_PROBLEM) {
   document.body.innerHTML = '<p style="margin:24px;max-width:600px;font:16px/1.5 Arial,Helvetica,sans-serif;color:#222">' + DATA_PROBLEM + '</p>';
   throw new Error(DATA_PROBLEM);
 }
 var DATA = NFWW_DATA;
+
+// Site codes mode (SCM): map.html?scm=true shows only the active sites' codes (no samples, tools or Legend).
+var SCM = false;
+try { SCM = String(new URLSearchParams(window.location.search).get('scm')).toLowerCase() === 'true'; } catch (e) {}
+if (SCM) document.body.classList.add('scm');
+// The sites SCM works with: active sites that have a proper site code (uncoded sites are left out)
+var SCM_SITES = SCM ? DATA.sites.filter(function (st) { return /^[A-Za-z]{2,3}[0-9]{3}$/.test(st.code || ''); }) : DATA.sites;
 
 // Saved display settings (kept in this browser only). Every read and write is wrapped in
 // try/catch, because storage can be blocked or empty. Saved values are checked before use.
@@ -411,12 +422,12 @@ function loadSaved() {
     return {};
   }
 }
-var SAVED = loadSaved();
+var SAVED = SCM ? {} : loadSaved();
 
 // Writes the current choices. The end date, month ticks and colour-band ticks are not saved.
 // Catchments are saved as the list switched off, so new catchments appear on by default.
 function saveSettings() {
-  if (!settingsReady) return;
+  if (!settingsReady || SCM) return;
   try {
     var off = Object.keys(catchmentOn).filter(function (n) { return !catchmentOn[n]; });
     window.localStorage.setItem(SETTINGS_KEY, JSON.stringify({
@@ -854,7 +865,7 @@ function clusterIcon(cluster) {
 function drawMonths() {
   DATA.months.slice().reverse().forEach(function (m) {
     if (map.hasLayer(layers[m])) map.removeLayer(layers[m]);
-    if (dateMode === 'range' || monthOn[m]) layers[m].addTo(map);
+    if (!SCM && (dateMode === 'range' || monthOn[m])) layers[m].addTo(map);
   });
   fitToVisible();
   updateLabels();
@@ -890,8 +901,20 @@ function rebuildGroups() {
 // True only while the script moves the map, so filter-driven refits don't close the tool boxes
 var programmaticMove = false;
 
+// In site codes mode the map fits to the active sites instead of the samples
+function fitToSites() {
+  var bounds = L.latLngBounds([]);
+  SCM_SITES.forEach(function (st) { bounds.extend([st.lat, st.lng]); });
+  if (!bounds.isValid()) return false;
+  programmaticMove = true;
+  map.fitBounds(bounds, { padding: [30, 30], maxZoom: 14 });
+  programmaticMove = false;
+  return true;
+}
+
 // Fits the map to the samples that are in a month switched on and currently visible
 function fitToVisible() {
+  if (SCM) return fitToSites();
   var bounds = L.latLngBounds([]);
   DATA.months.forEach(function (m) {
     if (!map.hasLayer(layers[m])) return;
@@ -956,26 +979,40 @@ document.getElementById('cluster-toggle').addEventListener('change', function (e
 // Monitoring-site diamonds. Shown or hidden from the Legend's Other Layers section. Off by default.
 // Active sites only: inactive sites are used for matching uncoded samples but are never drawn.
 // Not affected by the date, catchment or colour filters, and not used when fitting the map.
-var sitesOn = SAVED.sites === true;
+var sitesOn = SCM || SAVED.sites === true;
 var siteLayer = L.layerGroup();
-DATA.sites.forEach(function (st) {
+// Site codes mode: the pop-up for a clicked site
+function scmPopupHtml(st) {
+  var html = '<table class="details">';
+  html += '<tr><th>Site code</th><td>' + esc(st.code) + '</td></tr>';
+  html += '<tr><th>Site name</th><td>' + esc(st.name) + '</td></tr>';
+  html += '<tr><th>Latitude</th><td>' + esc(Number(st.lat).toFixed(6)) + '</td></tr>';
+  html += '<tr><th>Longitude</th><td>' + esc(Number(st.lng).toFixed(6)) + '</td></tr>';
+  html += '<tr><th>Catchment</th><td>' + esc(st.catchment || 'Not recorded') + '</td></tr>';
+  html += '</table>';
+  return html;
+}
+
+SCM_SITES.forEach(function (st) {
   var marker = L.marker([st.lat, st.lng], {
     pane: 'sitePane',
     icon: L.divIcon({
       className: 'site-icon',
-      iconSize: [12, 12],
-      iconAnchor: [6, 6],
-      html: '<div class="site-diamond"></div>'
+      iconSize: SCM ? [26, 26] : [12, 12],
+      iconAnchor: SCM ? [13, 13] : [6, 6],
+      html: SCM ? '<div style="width:26px;height:26px;display:flex;align-items:center;justify-content:center"><div class="site-diamond"></div></div>'
+                : '<div class="site-diamond"></div>'
     }),
-    interactive: false,   // clicks pass through to any sample underneath
+    interactive: SCM,   // in site codes mode a click opens the site's details; otherwise clicks pass through to any sample underneath
     keyboard: false
   });
   marker.bindTooltip(esc(st.code), {
     permanent: true,
     direction: 'right',
-    offset: [8, 0],
+    offset: SCM ? [14, 0] : [8, 0],
     className: 'site-code-label'
   });
+  if (SCM) marker.bindPopup(scmPopupHtml(st), { maxWidth: 300 });
   siteLayer.addLayer(marker);
 });
 
@@ -1475,7 +1512,7 @@ fitToVisible();
 // Open the legend on load. The short delay stops the map's initial zoom and fit from interfering.
 // On a touch device (phone or tablet) it stays closed, to leave the map clear. The Legend button opens it.
 setTimeout(function () {
-  if (!isTouchDevice) setLegend(true);
+  if (!isTouchDevice && !SCM) setLegend(true);
 }, 300);
 
 // Make the Display box controls match the restored settings
@@ -1545,7 +1582,7 @@ document.getElementById('reset-filter').addEventListener('click', resetFilter);
 // A drop-down with text entry. Nothing is listed until 3 characters are typed. Each word typed
 // must appear in the code or name. Choosing a site highlights it and zooms to it.
 var SEARCH_ZOOM = 16;
-var SEARCH = (DATA.search || []).map(function (s) {
+var SEARCH = (SCM ? SCM_SITES.map(function (st) { return { code: st.code, name: st.name, lat: st.lat, lng: st.lng }; }) : (DATA.search || [])).map(function (s) {
   var label;
   if (s.kind) label = s.name;
   else if (s.code && s.name) label = s.code + ' – ' + s.name;
@@ -1627,7 +1664,7 @@ function updateSearchList() {
 // Says whether a chosen site has samples on the map under the current filters (dates, catchments
 // and colour ticks). Sampling sites only: infrastructure has no samples, so it gets no note.
 function siteSampleNote(s) {
-  if (s.kind) return '';
+  if (s.kind || SCM) return '';
   var total = 0;
   var shown = 0;
   DATA.samples.forEach(function (o) {
