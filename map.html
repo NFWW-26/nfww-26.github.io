@@ -155,6 +155,7 @@
   body.scm #legend-wrap, body.scm #help-pop, body.scm #copy-toast, body.scm .help-btn { display: none !important; }
   body.scm .tool-wrap[data-tool="filter"], body.scm .tool-wrap[data-tool="display"], body.scm .tool-wrap[data-tool="download"], body.scm #copy-wrap { display: none !important; }
   body.scm .site-icon { cursor: pointer; }
+  body.scm table.details a { color: #1a5fa8; }
   /* Download panel */
   .download-box { width: 280px; }
   .dl-text { margin: 0 0 8px; font-size: 14px; line-height: 1.4; white-space: normal; }
@@ -391,8 +392,8 @@ document.write('<script src="data.js?v=' + Math.floor(Date.now() / 300000) + '">
 var DATA_PROBLEM = '';
 if (typeof NFWW_DATA === 'undefined') {
   DATA_PROBLEM = 'The data file (data.js) could not be loaded. Check that data.js has been uploaded to the same folder as this page, then reload the page.';
-} else if (NFWW_DATA.siteVersion !== 'V0.6.14') {
-  DATA_PROBLEM = 'This page is version V0.6.14 but its data file (data.js) is version ' + NFWW_DATA.siteVersion + '. Run both Create data and Create website, and upload all the files to the same folder. If you have just uploaded them, reload the page with Ctrl+F5.';
+} else if (NFWW_DATA.siteVersion !== 'V0.6.15') {
+  DATA_PROBLEM = 'This page is version V0.6.15 but its data file (data.js) is version ' + NFWW_DATA.siteVersion + '. Run both Create data and Create website, and upload all the files to the same folder. If you have just uploaded them, reload the page with Ctrl+F5.';
 }
 if (DATA_PROBLEM) {
   document.body.innerHTML = '<p style="margin:24px;max-width:600px;font:16px/1.5 Arial,Helvetica,sans-serif;color:#222">' + DATA_PROBLEM + '</p>';
@@ -989,6 +990,9 @@ function scmPopupHtml(st) {
   html += '<tr><th>Latitude</th><td>' + esc(Number(st.lat).toFixed(6)) + '</td></tr>';
   html += '<tr><th>Longitude</th><td>' + esc(Number(st.lng).toFixed(6)) + '</td></tr>';
   html += '<tr><th>Catchment</th><td>' + esc(st.catchment || 'Not recorded') + '</td></tr>';
+  html += '<tr><th>Directions</th><td><a href="https://www.google.com/maps/dir/?api=1&amp;destination=' +
+          esc(Number(st.lat).toFixed(6)) + ',' + esc(Number(st.lng).toFixed(6)) +
+          '" target="_blank" rel="noopener">Open in Google Maps</a></td></tr>';
   html += '</table>';
   return html;
 }
@@ -1061,6 +1065,28 @@ function infraPopup(st) {
   marker.bindPopup(infraPopup(st), { maxWidth: 340, maxHeight: 420 });
   infraLayer.addLayer(marker);
 });
+
+// Site codes mode: the visitor's own position as a blue dot, with a pale circle for the accuracy.
+// The browser asks permission and the position stays on the device. If it is refused or not
+// available, the map works without the dot. Needs https.
+if (SCM && navigator.geolocation) {
+  var userDot = null;
+  var userAcc = null;
+  map.on('locationfound', function (e) {
+    if (!userDot) {
+      userAcc = L.circle(e.latlng, { radius: e.accuracy, color: '#1a73e8', weight: 1,
+                                     fillColor: '#1a73e8', fillOpacity: 0.12, interactive: false }).addTo(map);
+      userDot = L.circleMarker(e.latlng, { radius: 8, color: '#fff', weight: 3,
+                                           fillColor: '#1a73e8', fillOpacity: 1, interactive: false }).addTo(map);
+    } else {
+      userAcc.setLatLng(e.latlng);
+      userAcc.setRadius(e.accuracy);
+      userDot.setLatLng(e.latlng);
+    }
+  });
+  map.on('locationerror', function () {});
+  map.locate({ watch: true, enableHighAccuracy: true, setView: false, maximumAge: 10000 });
+}
 
 // Switch on any Other Layers that were on last time
 if (sitesOn) siteLayer.addTo(map);
