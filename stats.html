@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>NFWW sampling statistics (internal)</title>
+<style>
+  html, body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #222; background: #fff; }
+  header { background: #2e5e3e; color: #fff; padding: 12px 16px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
+  header h1 { margin: 0; font-size: 20px; }
+  header span { font-size: 14px; color: #f4d03f; font-weight: bold; }
+  main { max-width: 760px; margin: 0 auto; padding: 12px 16px 40px; }
+  h2 { color: #2e5e3e; font-size: 18px; margin: 24px 0 8px; }
+  p { margin: 0 0 10px; line-height: 1.45; font-size: 15px; }
+  .note { color: #555; font-size: 13px; }
+  .wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; }
+  th, td { padding: 7px 10px; border-bottom: 1px solid #ddd; text-align: left; }
+  th { background: #eef4ef; color: #2e5e3e; position: sticky; top: 0; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .bar { display: inline-block; height: 8px; background: #2e5e3e; border-radius: 4px; vertical-align: middle; margin-left: 8px; }
+  label { font-weight: bold; margin-right: 8px; }
+  select { font: 16px Arial, Helvetica, sans-serif; padding: 6px 8px; min-height: 40px; max-width: 100%; }
+  select:focus-visible { outline: 3px solid #f4d03f; outline-offset: 2px; }
+  #caption { margin-top: 28px; font-size: 12px; color: #666; }
+</style>
+<script>
+document.write('<script src="data.js?v=' + Math.floor(Date.now() / 300000) + '"></scr' + 'ipt>');
+</script>
+</head>
+<body>
+<header><h1>NFWW sampling statistics</h1><span>Internal use only</span></header>
+<main>
+  <h2>Active sites sampled by month</h2>
+  <p id="stats-note" class="note"></p>
+  <div class="wrap">
+    <table id="month-table">
+      <thead><tr><th>Month</th><th class="num">Sites sampled</th><th class="num">Active sites</th><th class="num">Percentage sampled</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <h2>Sites not sampled in a month</h2>
+  <p><label for="month-select">Month</label><select id="month-select"></select></p>
+  <p id="unsampled-msg" role="status"></p>
+  <div class="wrap">
+    <table id="unsampled-table" hidden>
+      <thead><tr><th>Site code</th><th>Site name</th><th>Catchment</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <p id="caption"></p>
+</main>
+<script>
+(function () {
+  var VERSION = 'V0.6.20';
+  if (typeof NFWW_DATA === 'undefined' || NFWW_DATA.siteVersion !== VERSION) {
+    document.body.innerHTML = '<p style="font:16px Arial,Helvetica,sans-serif;padding:20px">This page and its data file are not the same site version, or the data file is missing. Run Import data and Build website, then publish both.</p>';
+    return;
+  }
+  var DATA = NFWW_DATA;
+  var MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  var CODE = /^[A-Z]{2,3}[0-9]{3}$/;
+
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // Month number (year x 12 + month) from a date written dd/mm/yyyy or yyyy-mm-dd
+  function monthIndex(text) {
+    var p = String(text || '').trim().split(/[^0-9]+/);
+    var y, m;
+    if (p.length >= 2 && p[0].length === 4) { y = Number(p[0]); m = Number(p[1]); }
+    else if (p.length >= 3 && p[2].length === 4) { y = Number(p[2]); m = Number(p[1]); }
+    else return null;
+    if (!(m >= 1 && m <= 12) || y < 2020) return null;
+    return y * 12 + (m - 1);
+  }
+
+  function monthName(i) {
+    return MONTH_NAMES[i % 12] + ' ' + Math.floor(i / 12);
+  }
+
+  // Active sites that have a site code
+  var sites = [];
+  (DATA.sites || []).forEach(function (s) {
+    var c = String(s.code || '').trim().toUpperCase();
+    if (CODE.test(c)) sites.push({ code: c, name: s.name || '', catchment: s.catchment || '' });
+  });
+  sites.sort(function (a, b) { return a.code < b.code ? -1 : (a.code > b.code ? 1 : 0); });
+
+  // Site codes sampled in each month
+  var byMonth = {};
+  var first = null;
+  var last = null;
+  (DATA.samples || []).forEach(function (s) {
+    var i = monthIndex(s.date);
+    if (i === null) return;
+    if (first === null || i < first) first = i;
+    if (last === null || i > last) last = i;
+    var set = byMonth[i] || (byMonth[i] = {});
+    var loc = String(s.loc || '');
+    if (loc.indexOf('site:') === 0) set[loc.slice(5).toUpperCase()] = true;
+    var c = String(s.siteCode || '').trim().toUpperCase();
+    if (CODE.test(c)) set[c] = true;
+  });
+
+  var note = document.getElementById('stats-note');
+  var tbody = document.querySelector('#month-table tbody');
+  var select = document.getElementById('month-select');
+  var msg = document.getElementById('unsampled-msg');
+  var utable = document.getElementById('unsampled-table');
+  var ubody = utable.querySelector('tbody');
+  document.getElementById('caption').textContent = 'Data ' + (DATA.generated || '') + ' | Site ' + VERSION + ' | Internal use only';
+
+  if (first === null || sites.length === 0) {
+    note.textContent = 'There are no samples or no active coded sites in the data, so there is nothing to show.';
+    select.disabled = true;
+    return;
+  }
+
+  var d = new Date();
+  var nowIdx = d.getFullYear() * 12 + d.getMonth();
+  if (last > nowIdx) nowIdx = last;
+  var total = sites.length;
+
+  note.textContent = 'A site counts as sampled in a month if at least one sample that month was recorded at it (including samples matched to it by position). '
+    + 'Percentages use the current ' + total + ' active sites that have a site code, for every month. The current month is still in progress.';
+
+  function sampledCount(i) {
+    var set = byMonth[i] || {};
+    var n = 0;
+    sites.forEach(function (s) { if (set[s.code]) n++; });
+    return n;
+  }
+
+  var rows = '';
+  var options = '<option value="">Choose a month</option>';
+  for (var i = nowIdx; i >= first; i--) {
+    var n = sampledCount(i);
+    var pct = Math.round(n * 1000 / total) / 10;
+    var label = monthName(i) + (i === nowIdx ? ' (so far)' : '');
+    rows += '<tr><td>' + esc(label) + '</td><td class="num">' + n + '</td><td class="num">' + total
+      + '</td><td class="num">' + pct.toFixed(1) + '%<span class="bar" style="width:' + Math.round(pct * 0.6) + 'px"></span></td></tr>';
+    options += '<option value="' + i + '">' + esc(label) + '</option>';
+  }
+  tbody.innerHTML = rows;
+  select.innerHTML = options;
+
+  function showUnsampled() {
+    var v = select.value;
+    ubody.innerHTML = '';
+    utable.hidden = true;
+    if (v === '') { msg.textContent = 'Choose a month to see the sites that were not sampled.'; return; }
+    var i = Number(v);
+    var set = byMonth[i] || {};
+    var missing = sites.filter(function (s) { return !set[s.code]; });
+    if (missing.length === 0) {
+      msg.textContent = 'Every one of the ' + total + ' active sites was sampled in ' + monthName(i) + '.';
+      return;
+    }
+    msg.textContent = missing.length + ' of ' + total + ' active sites were not sampled in ' + monthName(i) + (i === nowIdx ? ' (so far)' : '') + '.';
+    var html = '';
+    missing.forEach(function (s) {
+      html += '<tr><td>' + esc(s.code) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.catchment || 'Not recorded') + '</td></tr>';
+    });
+    ubody.innerHTML = html;
+    utable.hidden = false;
+  }
+  select.addEventListener('change', showUnsampled);
+  showUnsampled();
+})();
+</script>
+</body>
+</html>
