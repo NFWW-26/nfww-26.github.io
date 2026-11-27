@@ -20,9 +20,12 @@
     .chart-box { height: 320px; }
   }
   .empty { font-size: 14px; color: #555; padding: 24px 0; margin: 0; }
-  .legend-list { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; margin-top: 10px; }
-  .legend-item { font: 13px Arial, Helvetica, sans-serif; color: #222; background: #fff; border: 1px solid #ccc;
+  .legend-list { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; }
+  .legend-item { display: inline-flex; align-items: center; gap: 5px; font: 12px/1.2 Arial, Helvetica, sans-serif;
+                 color: #222; background: #fff; border: 1px solid #ccc;
                  border-radius: 4px; padding: 3px 8px; cursor: pointer; }
+  .band-key { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 10px; font: 12px/1.2 Arial, Helvetica, sans-serif; color: #222; }
+  .band-key > span { display: inline-flex; align-items: center; gap: 5px; }
   .legend-item.off { opacity: 0.4; text-decoration: line-through; }
   /* Message shown after a copy button is pressed */
   .copy-toast { position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%); z-index: 2500;
@@ -35,8 +38,8 @@
   .copy-btn:hover { background: #f0f6f1; }
   .copy-btn:focus-visible { outline: 3px solid #f4d03f; outline-offset: 2px; }
   .copy-btn svg { width: 20px; height: 20px; }
-  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 5px;
-            vertical-align: middle; border: 1px solid #555; }
+  .swatch { display: inline-block; box-sizing: border-box; flex: 0 0 auto; width: 12px; height: 12px;
+            border-radius: 50%; border: 1px solid #555; }
   /* Help buttons (a small ? to the right of a heading) and the help popup */
   .help-btn { display: inline-block; box-sizing: border-box; width: 18px; height: 18px; margin: 0 0 0 8px; padding: 0;
               border: 1.5px solid #499ED5; border-radius: 50%; background: #499ED5; color: #fff;
@@ -129,8 +132,8 @@ document.write('<script src="data.js?v=' + Math.floor(Date.now() / 300000) + '">
 var DATA_PROBLEM = '';
 if (typeof NFWW_DATA === 'undefined') {
   DATA_PROBLEM = 'The data file (data.js) could not be loaded. Check that data.js has been uploaded to the same folder as this page, then reload the page.';
-} else if (NFWW_DATA.siteVersion !== 'V1.0.3') {
-  DATA_PROBLEM = 'This page is version V1.0.3 but its data file (data.js) is version ' + NFWW_DATA.siteVersion + '. Run both Create data and Create website, and upload all the files to the same folder. If you have just uploaded them, reload the page with Ctrl+F5.';
+} else if (NFWW_DATA.siteVersion !== 'V1.0.4') {
+  DATA_PROBLEM = 'This page is version V1.0.4 but its data file (data.js) is version ' + NFWW_DATA.siteVersion + '. Run both Create data and Create website, and upload all the files to the same folder. If you have just uploaded them, reload the page with Ctrl+F5.';
 }
 if (DATA_PROBLEM) {
   document.body.innerHTML = '<p style="margin:24px;max-width:600px;font:16px/1.5 Arial,Helvetica,sans-serif;color:#222">' + DATA_PROBLEM + '</p>';
